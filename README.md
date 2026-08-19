@@ -1,156 +1,136 @@
-# Congress Text Analysis
+# Congress Explorer
 
 A research-oriented tool for exploring the Stanford Congressional Record corpus.
 
-The goal of this project is to make large-scale Congressional Record text data usable by humanities researchers who may not program.
+The project is designed primarily for humanities researchers who need to search, inspect, and compare Congressional speech without writing Python or working directly with large text archives.
 
-The initial use case is supporting research by Dr. Michael Graziano on religion, government, and the ways political institutions define and discuss religion.
+The initial research use case is supporting Dr. Michael Graziano's work on religion, government, national security, and the ways U.S. political institutions identify, classify, and discuss religion.
 
-This is a **research project first, not a technology demonstration**. Computational methods should be added only when they help answer substantive research questions.
+This is a **research project first, not a technology demonstration**.
 
----
-
-## Project Goals
-
-The first version of the project should provide a simple interface for researchers to:
-
-- Search Congressional speeches by keyword or exact phrase
-- Filter results by year
-- Filter by House or Senate
-- Filter by political party
-- View speaker metadata
-- Read the surrounding speech text
-- Open the full speech
-- Export search results as CSV
-
-Possible future methods include:
-
-- phrase and n-gram analysis
-- TF-IDF
-- semantic search
-- text embeddings
-- clustering
-- document classification
-- historical comparison across periods
-
-These methods should only be added when they solve an actual research problem.
+Computational methods should be added only when they help answer substantive historical questions or improve the researcher's ability to discover relevant primary sources.
 
 ---
 
-## Research Approach
+## Current Research Scope
 
-The intended workflow is:
+The project originally considered the full Stanford Congressional Record corpus from Congress 43 through Congress 114.
+
+For the first research phase, the scope has been narrowed substantially.
+
+### Phase 1 Corpus
+
+The current target is:
 
 ```text
-Congressional Record
-        ↓
-basic search and filtering
-        ↓
-identify historically relevant material
-        ↓
-researcher close reading
-        ↓
-identify retrieval or comparison problems
-        ↓
-add computational methods when useful
+Congress 077–096
+approximately 1941–1981
 ```
 
-The project should remain **human-in-the-loop**.
+This period covers the historical context most directly relevant to the first research use case, including:
 
-Models and algorithms should help reduce a very large corpus into material worth reading. Historical interpretation remains the responsibility of the researcher.
+- World War II
+- the OSS period
+- creation and early history of the CIA
+- the early Cold War
+- the Korean War
+- the Vietnam era
+- late Cold War developments
+- the period surrounding the 1979 Iranian Revolution
+
+For this Phase 1 corpus, **all Congressional speeches should be retained**, not only speeches containing known religion-related keywords.
+
+This is important because historically relevant discussions may use language such as:
+
+```text
+freedom of conscience
+freedom of worship
+spiritual values
+sectarian
+Catholic
+Protestant
+Jewish
+Muslim
+missionary
+chaplain
+atheistic communism
+Christian civilization
+```
+
+without explicitly using the words `religion` or `religious`.
+
+Keyword filtering may later be used to construct broader candidate corpora outside the Phase 1 period, but it should not replace the complete 077–096 research corpus.
 
 ---
 
 ## Data Source
 
-The initial corpus comes from the Stanford Congressional Record dataset.
+The source data comes from the Stanford Congressional Record dataset.
 
-The two main archives currently used are:
+The original Stanford archives include:
 
 ```text
 hein-bound.zip
 hein-daily.zip
 ```
 
-### Coverage
+Their coverage overlaps.
 
-`hein-bound` contains Congressional Record data for Congresses 43–111.
-
-`hein-daily` contains data for Congresses 97–114.
-
-Because the datasets overlap, the current plan for a canonical corpus is:
-
-```text
-Congress 043–111 → hein-bound
-Congress 112–114 → hein-daily
-```
-
-This avoids duplicate records from the overlapping period.
-
----
-
-## Important Data Handling Rule
-
-**Do not fully extract the Stanford ZIP archives.**
-
-The archives are very large and local disk space is limited.
-
-The processing pipeline should read files directly from the ZIP archives using Python's `zipfile` module.
-
-Files should be processed one Congress at a time.
-
-Example:
+For the current Phase 1 research period, only:
 
 ```text
 hein-bound.zip
-      ↓
-open one Congress inside ZIP
-      ↓
-read required files
-      ↓
-join speech + metadata
-      ↓
-write compressed Parquet
-      ↓
-release memory
-      ↓
-process next Congress
 ```
 
-Do not create a complete uncompressed copy of the Stanford dataset.
+is required.
+
+`hein-daily.zip` is not required for Congresses 077–096 and is therefore outside the current Phase 1 workflow.
+
+The project should not require both archives simply for the sake of maintaining complete historical coverage.
 
 ---
 
-## Stanford Files
+## Stanford Files Used
 
-For each Congress, the important files appear to be:
+For each Congress, the core Stanford files are:
 
 ```text
-speeches_043.txt
-descr_043.txt
-043_SpeakerMap.txt
+speeches_XXX.txt
+descr_XXX.txt
+XXX_SpeakerMap.txt
 ```
 
-with equivalent files for subsequent Congresses.
+For example:
+
+```text
+speeches_077.txt
+descr_077.txt
+077_SpeakerMap.txt
+```
 
 ### `speeches_*.txt`
 
-Expected to contain:
-
-- `speech_id`
-- speech text
-
-The exact schema still needs to be confirmed.
+Contains the speech identifier and full speech text.
 
 ### `descr_*.txt`
 
-Expected to contain descriptive metadata associated with speeches.
+Contains speech-level descriptive metadata, including information such as:
 
-The exact schema still needs to be confirmed.
+- speech ID
+- chamber
+- date
+- raw speaker label
+- speaker name fields
+- state
+- gender
+- character count
+- word count
 
 ### `*_SpeakerMap.txt`
 
-Confirmed format:
+Contains normalized speaker metadata.
+
+Observed schema:
 
 ```text
 speakerid|speech_id|lastname|firstname|chamber|state|gender|party|district|nonvoting
@@ -162,67 +142,193 @@ Example:
 43044451|430000002|HAMLIN|HANNIBAL|S|ME|M|R||voting
 ```
 
-`speech_id` will likely be the main key used to join the Stanford files.
+`speech_id` is used to connect speech text with descriptive and speaker metadata.
 
 ---
 
-## Files Not Needed for the Initial Application
+## Stanford Files Not Used
 
-The Stanford archives also contain derived data such as:
+The Stanford archives contain large derived datasets such as:
 
 ```text
 byspeaker_2gram_*.txt
 byparty_2gram_*.txt
 ```
 
-These files are very large and are **not required for the initial search application**.
+These files are not required for the Phase 1 application and should not be extracted or processed.
 
-Do not extract or process them unless a later research question specifically requires them.
+Other Stanford auxiliary datasets may be retained when useful, including:
 
-Other Stanford auxiliary datasets may be retained for future research, including:
+```text
+phrase_clusters/
+party_full/
+```
 
-- phrase clusters
-- phrase partisanship
-- vocabulary
-- parsing audits
-- speaker mapping statistics
-- party metadata
+The existing Stanford religion phrase cluster may later provide one useful baseline for keyword-based retrieval.
 
-They are not currently part of the core application pipeline.
+It should not be treated as a complete definition of religion-related Congressional discourse.
 
 ---
 
-## Local Project Structure
+## Data Strategy
 
-Current intended structure:
+Large Stanford ZIP archives should **not be fully extracted to disk**.
+
+Local development is performed on a laptop with limited disk space and approximately 16 GB RAM.
+
+The intended data flow is:
 
 ```text
-congress_text_analysis/
+hein-bound.zip
+      ↓
+read one Congress directly from archive
+      ↓
+speeches + descriptions + speaker metadata
+      ↓
+normalize and join records
+      ↓
+write compressed Parquet
+      ↓
+release temporary memory
+      ↓
+next Congress
+```
+
+The current Phase 1 target is:
+
+```text
+Congress 077
+Congress 078
+...
+Congress 096
+```
+
+Each Congress should produce an independent Parquet file.
+
+---
+
+## Processed Corpus
+
+The intended working corpus is:
+
+```text
+data/processed/
+├── congress_077.parquet
+├── congress_078.parquet
+├── congress_079.parquet
+├── ...
+└── congress_096.parquet
+```
+
+One Parquet file per Congress is preferable to one large combined file because:
+
+- individual Congresses can be rebuilt independently
+- failures are easier to isolate
+- validation is easier
+- disk usage is easier to inspect
+- DuckDB can query multiple Parquet files directly
+
+DuckDB can query the full Phase 1 corpus with a pattern such as:
+
+```sql
+SELECT *
+FROM read_parquet('data/processed/congress_*.parquet');
+```
+
+Parquet output uses Zstandard compression.
+
+---
+
+## Current Parquet Schema
+
+The current processing implementation produces approximately the following fields:
+
+```text
+speech_id
+congress
+date
+year
+chamber
+
+speaker_id
+first_name
+last_name
+speaker
+state
+gender
+party
+district
+nonvoting
+
+char_count
+word_count
+
+speech_text
+source
+```
+
+The raw `speaker` label should be retained even when normalized speaker metadata is available.
+
+Labels such as:
+
+```text
+The SPEAKER
+The PRESIDENT pro tempore
+Mr. SMITH
+```
+
+may themselves be useful historical information.
+
+---
+
+## Current Project Structure
+
+```text
+congress_explorer/
 │
-├── raw/
+├── data/
 │   ├── hein-bound.zip
-│   ├── hein-daily.zip
-│   └── other Stanford archives
-│
-├── processed/
-│   └── generated Parquet files
+│   ├── phrase_clusters/
+│   ├── party_full/
+│   └── processed/
 │
 ├── scripts/
 │   ├── inspect_zip.py
-│   └── future processing scripts
+│   ├── process_corpus.py
+│   └── make_core_archive.py
 │
 ├── app/
-│   └── future Streamlit application
+│   ├── __init__.py
+│   ├── search_engine.py
+│   └── app.py
 │
+├── main.py
 ├── pyproject.toml
 ├── uv.lock
-├── .python-version
+├── .gitignore
 └── README.md
 ```
 
-The raw ZIP files should remain unchanged.
+### Important
 
-Generated or transformed data should go into `processed/`.
+`make_core_archive.py` is a legacy experiment and is not part of the intended Phase 1 pipeline.
+
+It should eventually be removed because the project no longer needs to create another intermediate ZIP archive.
+
+The intended pipeline is:
+
+```text
+Stanford ZIP
+→ Parquet
+```
+
+not:
+
+```text
+Stanford ZIP
+→ smaller ZIP
+→ Parquet
+```
 
 ---
 
@@ -230,347 +336,520 @@ Generated or transformed data should go into `processed/`.
 
 The project uses:
 
-- Python 3.12
-- `uv` for Python and dependency management
-- VS Code as the primary development environment
+- Python >= 3.12
+- `uv` for dependency and environment management
+- VS Code for local development
 
-Python version:
+Current dependencies declared in `pyproject.toml` include:
 
 ```text
-3.12
+duckdb
+pyarrow
+streamlit
 ```
 
-Run Python scripts with:
+Run Python commands through `uv`:
 
 ```bash
 uv run python scripts/script_name.py
 ```
 
-Avoid relying on manually activated virtual environments when possible.
-
----
-
-## Current Dependencies
-
-At the initial inspection stage, only the Python standard library is required.
-
-`zipfile` is used to read Stanford files directly inside ZIP archives.
-
-Future expected dependencies include:
+Launch Streamlit with:
 
 ```bash
-uv add duckdb pyarrow
-```
-
-For the researcher-facing UI:
-
-```bash
-uv add streamlit
-```
-
-Potential core stack:
-
-```text
-Python
-uv
-zipfile
-PyArrow
-Parquet
-DuckDB
-Streamlit
-```
-
-Avoid adding unnecessary infrastructure.
-
-In particular, the first version does **not** need:
-
-- React
-- a separate API backend
-- Docker
-- authentication
-- a vector database
-- cloud infrastructure
-- an LLM
-- embeddings
-
----
-
-## Inspecting ZIP Contents
-
-The current inspection script should read files directly from:
-
-```text
-raw/hein-bound.zip
-```
-
-without extracting the archive.
-
-Example target files:
-
-```text
-hein-bound/speeches_043.txt
-hein-bound/descr_043.txt
-hein-bound/043_SpeakerMap.txt
-```
-
-A script can inspect a few lines using:
-
-```python
-from pathlib import Path
-from zipfile import ZipFile
-
-project_root = Path(__file__).resolve().parent.parent
-zip_path = project_root / "raw" / "hein-bound.zip"
-
-targets = [
-    "hein-bound/speeches_043.txt",
-    "hein-bound/descr_043.txt",
-    "hein-bound/043_SpeakerMap.txt",
-]
-
-with ZipFile(zip_path) as z:
-    for name in targets:
-        info = z.getinfo(name)
-
-        print()
-        print(name)
-        print(f"Uncompressed size: {info.file_size:,} bytes")
-
-        with z.open(name) as f:
-            for _ in range(5):
-                line = f.readline()
-                print(
-                    line.decode(
-                        "utf-8",
-                        errors="replace"
-                    ).rstrip()
-                )
-```
-
-Run with:
-
-```bash
-uv run python scripts/inspect_zip.py
+uv run streamlit run app/app.py
 ```
 
 ---
 
-## Planned Processed Data Format
+## Current Implementation Status
 
-The goal is to create compact Parquet files, probably one per Congress:
+### Confirmed Working
 
-```text
-processed/
-├── congress_043.parquet
-├── congress_044.parquet
-├── congress_045.parquet
-├── ...
-└── congress_114.parquet
-```
+- Stanford archive contents have been inspected.
+- The Stanford archive exhibits a 4 GiB ZIP offset issue with normal ZIP readers.
+- A custom archive offset workaround has been implemented.
+- The three core Stanford file families have been identified.
+- Speech metadata and SpeakerMap records can be joined using `speech_id`.
+- `scripts/process_corpus.py` exists and can generate Parquet.
+- Congress 043 has been used as a prototype.
+- Congress 043 produced approximately:
+  - 119,302 speech records
+  - 26.2 MB compressed Parquet
 
-This is preferable to one very large file because individual Congresses can be rebuilt independently.
+- A DuckDB search prototype exists in `app/search_engine.py`.
+- A Streamlit interface prototype exists in `app/app.py`.
 
-DuckDB can query all files together:
+### Not Yet Complete or Verified
 
-```sql
-SELECT *
-FROM read_parquet('processed/congress_*.parquet');
-```
+The following should **not** currently be considered complete:
 
-The desired final schema is approximately:
+- full Congress 043–114 processing
+- Congress 077–096 batch processing
+- true bounded-memory streaming
+- CRC validation of ZIP members
+- atomic Parquet output
+- per-Congress validation reports
+- processed-corpus manifest
+- automated tests
+- complete cross-Congress schema validation
+- production-ready Streamlit interface
 
-```text
-speech_id
-congress
-date
-chamber
-speaker_id
-first_name
-last_name
-state
-party
-district
-speech_text
-source
-```
-
-The exact schema should be determined after inspecting the Stanford speech and description files.
+The code currently contains prototypes for several of these areas, but they require additional validation and cleanup.
 
 ---
 
-## Planned Research Interface
+## Important Known Technical Issue
 
-The first researcher-facing application will likely use Streamlit.
+The current archive-reading implementation is not yet truly streaming.
 
-The UI should remain intentionally simple.
+The existing implementation effectively performs:
+
+```text
+compressed ZIP member
+      ↓
+read complete compressed member into memory
+      ↓
+decompress complete member into memory
+      ↓
+parse records
+```
+
+The corpus processor also currently accumulates a full Congress in Python lists before constructing an Arrow table.
+
+This worked for the Congress 043 prototype but does not guarantee bounded memory use for larger Congresses.
+
+The next implementation step is to replace this with actual incremental processing.
+
+The target behavior is:
+
+```text
+ZIP member
+    ↓
+small decompression chunks
+    ↓
+lines
+    ↓
+batch of several thousand speeches
+    ↓
+ParquetWriter
+    ↓
+clear batch
+    ↓
+continue
+```
+
+Memory use should remain bounded independently of the size of a Congress.
+
+---
+
+## Archive Reader Refactor
+
+The Stanford-specific ZIP handling is currently duplicated in:
+
+```text
+scripts/inspect_zip.py
+scripts/process_corpus.py
+```
+
+The next refactor should introduce:
+
+```text
+scripts/archive_reader.py
+```
+
+This module should become the single implementation responsible for:
+
+- locating Stanford archives
+- handling the 4 GiB offset issue
+- opening Stanford ZIP members
+- incremental decompression
+- reading lines safely
+- validating uncompressed byte counts
+- validating CRC32 when possible
+
+Other scripts should use this module instead of implementing their own ZIP handling.
+
+---
+
+## Data Processing Requirements
+
+The corpus processor should ultimately satisfy the following requirements.
+
+### Preserve Every Speech
+
+The speech table should be the primary dataset.
+
+Conceptually:
+
+```text
+speeches
+   LEFT JOIN descriptions
+   LEFT JOIN SpeakerMap
+```
+
+A speech should not disappear simply because its speaker cannot be mapped.
+
+Missing metadata should remain nullable.
+
+### Incremental Processing
+
+Do not hold an entire Congress speech corpus in memory.
+
+Write Parquet incrementally using batches.
+
+### Atomic Output
+
+Do not write directly to:
+
+```text
+congress_077.parquet
+```
+
+during processing.
+
+Instead use:
+
+```text
+congress_077.parquet.tmp
+```
+
+and rename it only after processing and validation succeed.
+
+This prevents partial Parquet files from being mistaken for completed corpus files.
+
+### Batch Failure Reporting
+
+If multiple Congresses are processed and one fails, the program may continue processing the remaining Congresses, but the final command must report the failures clearly and return a non-zero exit status.
 
 Example:
 
 ```text
-Congressional Record Explorer
+Processed: 18
+Failed: 2
 
-Search:
-[ religious freedom                 ]
-
-Years:
-[ 1940 ] to [ 1960 ]
-
-Chamber:
-[ All ]
-
-Party:
-[ All ]
-
-[ Search ]
+Failed Congresses:
+084
+091
 ```
 
-Results should show:
+---
+
+## Corpus Validation
+
+Every processed Congress should eventually produce validation statistics including:
 
 ```text
-Date
 Congress
-House / Senate
-Speaker
-Party
-State
-Relevant text snippet
-
-[ View full speech ]
+source archive
+row count
+unique speech IDs
+duplicate speech IDs
+missing speech text
+missing dates
+missing chamber
+missing speaker IDs
+description match rate
+SpeakerMap match rate
+minimum date
+maximum date
+House speech count
+Senate speech count
+other / procedural count
+Parquet file size
+archive integrity status
 ```
 
-Researchers should also be able to download filtered results as CSV.
+A corpus-level manifest should eventually summarize these results.
+
+Possible location:
+
+```text
+data/processed/manifest.parquet
+```
+
+or:
+
+```text
+data/processed/manifest.csv
+```
+
+The manifest should be used for corpus status reporting instead of rescanning all Parquet files whenever possible.
 
 ---
 
-## Search Philosophy
+## Research Search Interface
 
-The first implementation should use ordinary text search.
+A DuckDB-based search prototype currently exists.
 
-Examples:
+The intended researcher-facing interface should remain simple.
+
+Primary search modes should initially be:
 
 ```text
-religion
-"religious freedom"
-church
-conscience
-"free exercise"
-"church and state"
+Exact phrase
+Contains all terms
+Contains any term
 ```
 
-Do not begin with embeddings or topic modeling.
+The wording is important.
 
-The purpose of initial search is to understand:
+The current implementation uses substring matching rather than linguistic tokenization, so the UI should not imply stronger word-level semantics than the backend actually provides.
 
-- what researchers actually look for
-- which searches work
-- which searches fail
-- what kinds of historical material are difficult to retrieve
+For example, a search for:
 
-Only then should more advanced methods be considered.
+```text
+sect
+```
+
+may also match:
+
+```text
+sectarian
+section
+```
+
+Retrieval behavior should be documented because it can affect historical interpretation.
 
 ---
 
-## Possible Future Semantic Search
+## Search Filters
 
-A later version may provide two researcher-facing search modes:
+Useful initial filters include:
+
+- year
+- Congress
+- chamber
+- party
+- state
+- speaker
+
+The primary research workflow should emphasize finding and reading historical sources rather than presenting a complex analytics dashboard.
+
+---
+
+## KWIC
+
+Search results should display a Key Word In Context preview.
+
+Example:
 
 ```text
-Exact words
-Similar ideas
+...the principle of [religious freedom] guaranteed
+to every citizen of this Republic must not be...
 ```
 
-The implementation of "Similar ideas" might use embeddings or another semantic retrieval technique.
+The researcher should be able to expand the complete speech without losing the search context.
 
-The researcher should not need to understand the underlying machine-learning implementation.
+All historical text inserted into HTML should be escaped before markup is added so that original Congressional text is not altered or accidentally interpreted as HTML.
 
-The research question should determine the technology, not the other way around.
+---
+
+## Export
+
+Researchers should be able to export useful search results.
+
+The initial export should prioritize:
+
+- metadata
+- query
+- KWIC snippet
+- speech ID
+- date
+- speaker
+- chamber
+- party
+- state
+
+Full-speech export can be added separately if needed.
+
+Large result exports should not unnecessarily load the entire corpus into application memory.
+
+---
+
+## Analytics
+
+Analytics are secondary to source discovery.
+
+Useful future summaries may include:
+
+```text
+matching speeches by year
+matching speeches by Congress
+matching speeches by chamber
+matching speeches by party
+```
+
+These should be described accurately.
+
+For example:
+
+```text
+matching speeches by year
+```
+
+is not the same as:
+
+```text
+number of keyword mentions by year
+```
+
+One speech containing a phrase twenty times still represents one matching speech unless occurrence counts are explicitly calculated.
+
+Cross-party or historical comparisons should eventually consider normalization by total speech volume or total word count.
+
+---
+
+## Current Research Workflow
+
+The intended Phase 1 workflow is:
+
+```text
+Stanford hein-bound archive
+        ↓
+Congresses 077–096
+        ↓
+complete speech-level Parquet corpus
+        ↓
+keyword / phrase search
+        ↓
+historian close reading
+        ↓
+identify retrieval failures
+        ↓
+only then consider additional methods
+```
+
+Potential later methods include:
+
+- expanded historical dictionaries
+- stemming
+- fuzzy search
+- full-text indexing
+- TF-IDF
+- semantic search
+- embeddings
+- clustering
+- document classification
+
+None of these should be added simply because the technology is available.
+
+---
+
+## Future Religion Candidate Corpus
+
+Outside Congresses 077–096, it may eventually be useful to construct a smaller candidate corpus using broad religion-related vocabulary.
+
+Such a dataset should explicitly be called a:
+
+```text
+religion candidate corpus
+```
+
+and should not be described as containing all Congressional discourse about religion.
+
+Keyword selection introduces retrieval bias and can miss historically relevant material expressed through changing terminology.
+
+The complete Phase 1 corpus should therefore remain unfiltered.
 
 ---
 
 ## Development Principles
 
-When modifying this project:
-
-1. Preserve the raw Stanford archives.
-2. Do not extract the full archives.
-3. Process data incrementally.
-4. Keep memory usage appropriate for a laptop with 16 GB RAM.
-5. Minimize temporary disk usage.
-6. Prefer compressed Parquet for processed data.
-7. Keep scripts reproducible.
-8. Keep the researcher-facing interface simple.
-9. Avoid unnecessary infrastructure.
-10. Do not introduce AI or ML methods unless they clearly improve the research workflow.
-
----
+1. Research questions come before technical features.
+2. Preserve all speeches within the Phase 1 historical period.
+3. Avoid unnecessary intermediate copies of very large datasets.
+4. Do not fully extract Stanford archives.
+5. Keep memory use appropriate for a 16 GB laptop.
+6. Process Congresses independently.
+7. Validate outputs before treating them as research data.
+8. Record failures rather than silently skipping them.
+9. Prefer reproducible compressed Parquet as the working corpus.
+10. Keep the researcher-facing interface simple.
+11. Do not introduce AI or ML methods until a retrieval problem justifies them.
+12. Clearly distinguish prototype behavior from validated research infrastructure.
 
 ---
 
-## Current Status
+## Immediate Next Steps
 
-Completed:
+### 1. Create a shared archive reader
 
-- Stanford archives downloaded (`hein-bound.zip` and `hein-daily.zip`)
-- Archive contents inspected and ZIP64 offset quirks resolved
-- Main Stanford file families confirmed (`speeches_*.txt`, `descr_*.txt`, `*_SpeakerMap.txt`)
-- Ingestion pipeline implemented in `scripts/process_corpus.py` (streaming directly from ZIP into compressed Parquet files per Congress with zero temporary uncompressed disk usage)
-- DuckDB search & analytics engine built in `app/search_engine.py` (supporting full text, exact phrase, boolean logic, metadata filters, and KWIC snippet highlighting)
-- Interactive Streamlit research web interface implemented in `app/app.py`
-- Unified command-line interface implemented in `main.py`
-- Canonical Congresses 043–114 fully processed and indexed
+Create:
 
----
-
-## Quick Start & Usage
-
-### 1. Launch Research Web Application
-
-```bash
-uv run streamlit run app/app.py
-```
-or via main:
-```bash
-uv run python main.py app
+```text
+scripts/archive_reader.py
 ```
 
-### 2. Search Speeches from Command Line
+Move Stanford ZIP-specific archive handling out of:
 
-```bash
-uv run python main.py search "religious freedom"
-uv run python main.py search "church and state" --limit 10
+```text
+inspect_zip.py
+process_corpus.py
 ```
 
-### 3. Inspect Raw Archives without Unzipping
+The new module should eventually support true incremental decompression and integrity validation.
 
-```bash
-uv run python main.py inspect --congress 43
-uv run python main.py inspect --congress 114 --lines 10
+### 2. Refactor the corpus processor
+
+Modify:
+
+```text
+scripts/process_corpus.py
 ```
 
-### 4. Process Congresses into Parquet
+to:
 
-Process a single Congress:
-```bash
-uv run python main.py process --congress 43
+- use `archive_reader.py`
+- process speeches in bounded batches
+- write incrementally with `ParquetWriter`
+- use atomic temporary output files
+- report processing failures clearly
+- focus Phase 1 defaults on Congresses 077–096
+
+### 3. Add validation
+
+Add per-Congress validation and a corpus manifest.
+
+### 4. Test representative Congresses
+
+Before processing all twenty Phase 1 Congresses, test several different parts of the period.
+
+For example:
+
+```text
+077
+087
+096
 ```
 
-Process a range:
+Then expand testing if needed.
+
+### 5. Process the Phase 1 corpus
+
+Only after the processing pipeline is stable:
+
 ```bash
-uv run python main.py process --start 43 --end 50
+uv run python scripts/process_corpus.py --start 77 --end 96
 ```
 
-Process all 72 canonical Congresses (43 to 114):
-```bash
-uv run python main.py process --all
+### 6. Return to researcher UI
+
+After the corpus is validated, refine:
+
+```text
+app/search_engine.py
+app/app.py
 ```
+
+based on actual research use rather than adding additional speculative features.
 
 ---
 
 ## Guiding Question
 
-Before adding a new technical feature, ask:
+Before adding any feature, ask:
 
 > What research problem does this solve for the historian?
 
 If there is no clear answer, do not add the feature yet.
-
