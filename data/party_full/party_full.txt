@@ -1,0 +1,548 @@
+session|party|party_full
+1|A|anti-administration
+1|P|pro-administration
+1|F|federalist
+1|R|republican
+1|D|democratic republican
+2|A|anti-administration
+2|P|pro-administration
+2|R|republican
+2|F|federalist
+2|D|democratic republican
+3|P|pro-administration
+3|R|republican
+3|F|federalist
+3|A|anti-administration
+3|D|democratic republican
+4|R|republican
+4|F|federalist
+4|A|anti-administration
+5|F|federalist
+5|R|republican
+6|F|federalist
+6|R|republican
+7|F|federalist
+7|R|republican
+7|D|democratic republican
+8|R|republican
+8|F|federalist
+9|R|republican
+9|F|federalist
+10|R|republican
+10|F|federalist
+10|D|democratic republican
+11|R|republican
+11|F|federalist
+12|R|republican
+12|F|federalist
+12|D|democratic republican
+12|U|unknown
+13|R|republican
+13|F|federalist
+13|U|unknown
+14|R|republican
+14|F|federalist
+14|U|unknown
+15|F|federalist
+15|R|republican
+15|D|democratic republican
+16|R|republican
+16|F|federalist
+16|A|adams
+16|W|whig
+17|R|republican
+17|F|federalist
+17|A|adams
+17|J|jackson
+18|R|republican
+18|F|federalist
+18|A|adams
+18|J|jackson
+18|J|jackson republican
+18|C|crawford republican
+18|W|whig
+18|J|jacksonian republican
+18|J|jacksonian
+18|D|democratic republican
+18|A|anti mason
+18|A|anti-jacksonian
+18|D|democrat
+18|A|anti jacksonian
+19|R|republican
+19|A|adams
+19|J|jackson
+19|D|democratic republican
+20|J|jackson
+20|A|adams
+20|J|jacksonian
+21|A|adams
+21|J|jackson
+21|A|anti-jacksonian
+21|R|republican
+21|A|adams democrat
+21|N|nullifier
+21|D|democratic republican
+21|A|anti masonic
+21|F|federalist
+21|A|anti jacksonian
+21|A|anti mason
+21|W|whig
+21|J|jacksonian
+21|D|democrat
+22|J|jackson
+22|A|adams
+22|A|anti-jacksonian
+22|N|nullifier
+22|D|democratic republican
+22|A|anti masonic
+22|R|republican
+22|A|anti jacksonian
+22|J|jacksonian
+22|D|democrat
+22|W|whig
+22|A|anti mason
+23|J|jackson
+23|A|anti-jacksonian
+23|A|adams
+23|N|nullifier
+23|D|democrat
+23|W|whig
+23|A|anti jacksonian
+23|A|anti masonic
+23|A|anti jackson
+23|J|jacksonian
+23|R|republican
+24|A|adams
+24|J|jackson
+24|A|anti-jacksonian
+24|D|democrat
+24|W|whig
+24|J|jacksonian
+24|A|anti masonic
+24|N|nullifier
+24|A|anti jacksonian
+24|U|union democrat
+25|D|democrat
+25|W|whig
+25|J|jackson
+25|N|nullifier
+25|A|anti masonic
+25|I|independent
+26|D|democrat
+26|W|whig
+26|A|anti masonic
+26|C|conservative
+27|D|democrat
+27|W|whig
+27|I|ind. democrat
+27|I|independent
+28|W|whig
+28|D|democrat
+28|L|law and order
+28|I|ind. democrat
+28|I|ind. whig
+29|W|whig
+29|D|democrat
+29|A|american
+29|L|liberty
+30|D|democrat
+30|W|whig
+30|I|ind. democrat
+30|A|american
+30|I|independent
+30|F|free soil
+31|D|democrat
+31|W|whig
+31|F|free soil
+31|A|american
+31|I|independent
+31|I|ind. republican-democrat
+32|W|whig
+32|D|democrat
+32|I|ind. republican-democrat
+32|F|free soil
+32|I|ind. whig
+32|I|ind. democrat
+32|U|unionist
+32|S|states rights
+33|D|democrat
+33|W|whig
+33|I|ind. republican-democrat
+33|A|american
+33|I|ind. democrat
+33|I|independent
+33|F|free soil
+33|R|republican
+34|I|ind. republican-democrat
+34|D|democrat
+34|A|american
+34|W|whig
+34|R|republican
+35|D|democrat
+35|A|american
+35|R|republican
+35|I|ind. republican-democrat
+35|U|unionist
+35|I|ind. democrat
+35|W|whig
+36|R|republican
+36|D|democrat
+36|U|unionist
+36|I|ind. republican-democrat
+36|A|anti-lecompton democrat
+36|I|ind. democrat
+36|A|american
+36|W|whig
+37|D|democrat
+37|U|unionist
+37|R|republican
+37|C|constitutional unionist
+37|W|whig
+37|I|independent democrat
+37|I|ind. democrat
+37|U|unconditional unionist
+37|C|conservative republican
+37|U|union
+38|R|republican
+38|D|democrat
+38|U|unionist
+38|U|unconditional unionist
+38|C|conservative republican
+38|I|ind. republican
+39|R|republican
+39|D|democrat
+39|U|unconditional unionist
+39|U|unionist
+39|I|ind. republican
+40|R|republican
+40|D|democrat
+40|I|independent
+40|C|conservative
+40|I|ind. republican
+40|C|conservative republican
+40|W|whig
+41|R|republican
+41|D|democrat
+41|C|conservative
+41|L|liberal republican
+41|U|unionist
+42|R|republican
+42|D|democrat
+42|L|liberal republican
+42|I|ind. republican
+42|U|unionist
+43|R|republican
+43|D|democrat
+43|L|liberal republican
+43|I|ind. democrat
+43|I|ind. republican
+43|U|unionist
+44|R|republican
+44|D|democrat
+44|I|independent
+44|I|ind. republican
+44|I|ind. democrat
+45|D|democrat
+45|R|republican
+45|I|independent
+45|I|ind. democrat
+46|R|republican
+46|D|democrat
+46|I|independent
+46|N|national greenbacker
+46|I|ind. democrat
+47|R|republican
+47|I|independent
+47|D|democrat
+47|N|national greenbacker
+47|R|readjuster democrat
+47|I|ind. democrat
+48|D|democrat
+48|R|republican
+48|I|independent
+48|I|ind. democrat
+48|R|readjuster
+48|I|ind. republican
+48|N|national greenbacker
+49|D|democrat
+49|R|republican
+49|I|ind. democrat
+49|N|national greenbacker
+50|R|republican
+50|D|democrat
+50|I|ind. republican
+50|U|union
+50|I|independent
+50|N|national greenbacker
+51|D|democrat
+51|R|republican
+51|U|union labor
+52|D|democrat
+52|R|republican
+52|P|populist
+53|D|democrat
+53|R|republican
+53|P|populist
+53|I|ind. democrat
+53|S|silver
+54|D|democrat
+54|R|republican
+54|P|populist
+54|S|silver republican
+54|S|silver
+55|D|democrat
+55|R|republican
+55|P|populist
+55|S|silver republican
+55|F|free silver
+55|S|silver
+55|I|ind. republican
+56|R|republican
+56|P|populist
+56|D|democrat
+56|S|silver republican
+57|R|republican
+57|P|populist
+57|D|democrat
+57|S|silver republican
+58|D|democrat
+58|R|republican
+58|I|ind. republican
+58|D|democratic and union labor
+59|D|democrat
+59|R|republican
+59|U|unionist
+60|R|republican
+60|D|democrat
+60|I|independent
+60|I|ind. republican
+60|U|unionist
+61|R|republican
+61|D|democrat
+61|U|unionist
+62|D|democrat
+62|R|republican
+62|P|progressive republican
+62|U|unionist
+62|S|socialist
+63|R|republican
+63|D|democrat
+63|P|progressive
+63|I|independent
+63|U|unionist
+64|D|democrat
+64|R|republican
+64|I|independent
+64|U|unionist
+64|P|progressive
+64|P|prohibitionist
+64|S|socialist
+65|R|republican
+65|D|democrat
+65|I|ind. republican
+65|P|prohibitionist
+65|S|socialist
+65|P|progressive
+65|U|unionist
+66|D|democrat
+66|R|republican
+66|P|prohibitionist
+66|I|ind. republican
+66|S|socialist
+66|U|union labor
+66|U|unionist
+67|R|republican
+67|D|democrat
+67|S|socialist
+67|U|unionist
+67|I|ind. republican
+68|R|republican
+68|D|democrat
+68|F|farmer-labor
+68|S|socialist
+68|U|unionist
+69|R|republican
+69|D|democrat
+69|F|farmer-labor
+69|S|socialist
+69|U|unionist
+69|A|american labor
+70|D|democrat
+70|R|republican
+70|S|socialist
+70|F|farmer-labor
+70|U|unionist
+71|D|democrat
+71|R|republican
+71|F|farmer-labor
+71|U|unionist
+72|D|democrat
+72|R|republican
+72|U|unionist
+72|N|nonpartisan
+72|F|farmer-labor
+73|R|republican
+73|D|democrat
+73|F|farmer-labor
+73|C|coalitionist
+74|R|republican
+74|D|democrat
+74|F|farmer-labor
+74|P|progressive
+74|C|coalitionist
+75|D|democrat
+75|R|republican
+75|P|progressive
+75|F|farmer-labor
+75|I|independent
+75|C|coalitionist
+76|D|democrat
+76|R|republican
+76|F|farmer-labor
+76|I|independent
+76|C|coalitionist
+76|P|progressive
+76|A|american labor
+77|D|democrat
+77|I|independent
+77|R|republican
+77|F|farmer-labor
+77|P|progressive
+77|C|coalitionist
+77|A|american labor
+77|I|ind. democrat
+78|D|democrat
+78|R|republican
+78|P|progressive
+78|C|coalitionist
+78|A|american labor
+78|F|farmer-labor
+79|D|democrat
+79|R|republican
+79|P|progressive
+79|P|popular democrat
+79|A|american labor
+80|R|republican
+80|D|democrat
+80|A|american labor
+80|P|popular democrat
+81|R|republican
+81|D|democrat
+81|A|american labor
+81|L|liberal
+81|P|popular democrat
+82|R|republican
+82|D|democrat
+82|I|independent
+82|P|popular democrat
+83|R|republican
+83|D|democrat
+83|I|independent
+83|P|popular democrat
+84|D|democrat
+84|R|republican
+84|P|popular democrat
+84|I|independent
+85|R|republican
+85|D|democrat
+85|P|popular democrat
+86|R|republican
+86|D|democrat
+86|I|ind. democrat
+86|P|popular democrat
+87|R|republican
+87|D|democrat
+87|P|popular democrat
+88|R|republican
+88|D|democrat
+88|P|popular democrat
+89|D|democrat
+89|R|republican
+89|P|popular democrat
+90|D|democrat
+90|R|republican
+90|P|popular democrat
+91|D|democrat
+91|R|republican
+91|N|new progressive
+92|D|democrat
+92|R|republican
+92|C|conservative
+92|N|new progressive
+92|I|independent
+93|R|republican
+93|D|democrat
+93|C|conservative
+93|P|popular democrat
+93|I|independent
+93|D|democrat-liberal
+93|I|ind. democrat
+94|R|republican
+94|C|conservative
+94|D|democrat
+94|P|popular democrat
+94|I|independent
+95|D|democrat
+95|R|republican
+95|I|independent
+95|N|new progressive
+96|D|democrat
+96|R|republican
+96|I|independent
+96|N|new progressive
+97|I|independent
+97|D|democrat
+97|R|republican
+97|N|new progressive
+98|R|republican
+98|D|democrat
+98|N|new progressive
+99|R|republican
+99|D|democrat
+100|D|democrat
+100|R|republican
+101|R|republican
+101|D|democrat
+102|D|democrat
+102|R|republican
+102|R|republican-conservative
+102|D|democrat-liberal
+102|I|independent
+103|D|democrat
+103|R|republican
+103|I|independent
+104|D|democrat
+104|R|republican
+104|I|independent
+105|D|democrat
+105|R|republican
+105|I|independent
+106|R|republican
+106|D|democrat
+106|I|independent
+107|D|democrat
+107|R|republican
+107|I|independent
+107|A|al
+108|D|democrat
+108|R|republican
+108|I|independent
+108|P|popular democrat
+109|R|republican
+109|D|democrat
+109|I|independent
+110|R|republican
+110|D|democrat
+110|I|independent
+111|D|democrat
+111|R|republican
+111|I|independent
+112|R|republican
+112|D|democrat
+112|I|independent
+113|R|republican
+113|D|democrat
+113|I|independent
+114|R|republican
+114|D|democrat
+114|I|independent
