@@ -178,9 +178,9 @@ class StanfordArchive:
             if local_offset != zinfo.header_offset:
                 delta = zinfo.header_offset - local_offset
                 logger.info(
-                    "Corrected ZIP local-header offset for %s by -%,d bytes",
+                    "Corrected ZIP local-header offset for %s by -%s bytes",
                     member_name,
-                    delta,
+                    f"{delta:,}",
                 )
 
             raw_fp.seek(data_offset)

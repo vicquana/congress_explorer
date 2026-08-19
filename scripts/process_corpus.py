@@ -1,23 +1,49 @@
 """
 Process Stanford Congressional Record ZIP archives directly into Parquet files.
 
-Reads hein-bound.zip (Congresses 43-111) and hein-daily.zip (Congresses 112-114)
-directly in memory without extracting entire archives to disk.
+The processor reads the three core Stanford files for each Congress directly
+from the source ZIP archive:
+
+    speeches_XXX.txt
+    descr_XXX.txt
+    XXX_SpeakerMap.txt
+
+ZIP member reading is delegated to ``archive_reader.py`` so the Stanford 4 GiB
+offset quirk is handled in one place. Speech records are written to Parquet in
+bounded batches rather than accumulating an entire Congress in memory.
+
+Phase 1 research scope defaults to Congresses 077-096 (approximately
+1941-1981), all from ``hein-bound.zip``.
 """
 
+from __future__ import annotations
+
 import argparse
-import io
 import logging
-from pathlib import Path
-import struct
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
-import zipfile
-import zlib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+try:
+    # Works when imported as ``scripts.process_corpus``.
+    from .archive_reader import (
+        StanfordArchive,
+        congress_member_names,
+        get_archive_for_congress,
+    )
+except ImportError:
+    # Works when run directly: ``python scripts/process_corpus.py``.
+    from archive_reader import (  # type: ignore
+        StanfordArchive,
+        congress_member_names,
+        get_archive_for_congress,
+    )
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,453 +52,632 @@ logging.basicConfig(
 )
 logger = logging.getLogger("process_corpus")
 
+PHASE1_START = 77
+PHASE1_END = 96
+DEFAULT_BATCH_SIZE = 10_000
 
-def find_zip_path(filename: str) -> Path:
-    """Locate zip file across possible candidate directories."""
-    project_root = Path(__file__).resolve().parent.parent
-    candidates = [
-        project_root / "data" / filename,
-        project_root / "data" / "raw" / filename,
-        project_root / "raw" / filename,
+
+PARQUET_SCHEMA = pa.schema(
+    [
+        pa.field("speech_id", pa.int64()),
+        pa.field("congress", pa.int32(), nullable=False),
+        pa.field("date", pa.string()),
+        pa.field("year", pa.int32()),
+        pa.field("chamber", pa.string()),
+        pa.field("speaker_id", pa.int64()),
+        pa.field("first_name", pa.string()),
+        pa.field("last_name", pa.string()),
+        pa.field("speaker", pa.string()),
+        pa.field("state", pa.string()),
+        pa.field("gender", pa.string()),
+        pa.field("party", pa.string()),
+        pa.field("district", pa.string()),
+        pa.field("nonvoting", pa.string()),
+        pa.field("char_count", pa.int32()),
+        pa.field("word_count", pa.int32()),
+        pa.field("speech_text", pa.string()),
+        pa.field("source", pa.string(), nullable=False),
     ]
-    for p in candidates:
-        if p.exists():
-            return p
-    raise FileNotFoundError(
-        f"Could not find {filename} in data/, data/raw/, or raw/"
-    )
+)
 
 
-def get_entry_stream(
-    raw_fp: io.BufferedReader,
-    zinfo: zipfile.ZipInfo,
-) -> io.BytesIO:
-    """
-    Directly read and decompress a zip entry using its raw offset.
-    Accurately handles zip64 offset quirks and prevents overlap/zip-bomb checks.
-    """
-    offset = zinfo.header_offset
-    raw_fp.seek(offset)
-    sig = raw_fp.read(4)
+@dataclass
+class CongressStats:
+    congress: int
+    source: str
+    total_speeches: int = 0
+    matched_descr: int = 0
+    matched_smap: int = 0
+    malformed_speech_lines: int = 0
+    duplicate_descr_ids: int = 0
+    duplicate_smap_ids: int = 0
 
-    # Check if offset is shifted by 4GB
-    if sig != b"PK\x03\x04" and offset >= 4294967296:
-        offset -= 4294967296
-        raw_fp.seek(offset)
-        sig = raw_fp.read(4)
 
-    if sig != b"PK\x03\x04":
-        raise ValueError(
-            f"Invalid zip local header signature for {zinfo.filename} at offset {offset}"
+class BatchBuffer:
+    """Column-oriented in-memory buffer for one Parquet write batch."""
+
+    def __init__(self) -> None:
+        self.columns: dict[str, list] = {field.name: [] for field in PARQUET_SCHEMA}
+
+    def __len__(self) -> int:
+        return len(self.columns["speech_id"])
+
+    def append(self, record: dict[str, object]) -> None:
+        for name in self.columns:
+            self.columns[name].append(record[name])
+
+    def to_table(self) -> pa.Table:
+        return pa.Table.from_pydict(self.columns, schema=PARQUET_SCHEMA)
+
+    def clear(self) -> None:
+        for values in self.columns.values():
+            values.clear()
+
+
+def _clean_unknown(value: str) -> str:
+    """Normalize Stanford placeholder strings used for missing metadata."""
+    if value in {"", "Unknown", "None"}:
+        return ""
+    return value
+
+
+def _safe_int(value: str) -> Optional[int]:
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    return None
+
+
+def _load_descr_map(
+    archive: StanfordArchive,
+    member_name: str,
+    stats: CongressStats,
+) -> dict[str, tuple[str, ...]]:
+    """Load speech-level description metadata keyed by speech_id."""
+    descr_map: dict[str, tuple[str, ...]] = {}
+
+    try:
+        lines = archive.iter_member_lines(member_name, validate=True)
+        header = next(lines, None)
+        if header is None:
+            logger.warning("Empty description file: %s", member_name)
+            return descr_map
+
+        for line_number, line in enumerate(lines, start=2):
+            parts = line.rstrip("\r\n").split("|")
+            if len(parts) < 14:
+                logger.warning(
+                    "Skipping malformed descr line %s:%d (%d fields)",
+                    member_name,
+                    line_number,
+                    len(parts),
+                )
+                continue
+
+            speech_id = parts[0]
+            if speech_id in descr_map:
+                stats.duplicate_descr_ids += 1
+
+            # chamber, date, raw speaker, first, last, state, gender,
+            # char_count, word_count
+            descr_map[speech_id] = (
+                parts[1],
+                parts[2],
+                parts[4],
+                parts[5],
+                parts[6],
+                parts[7],
+                parts[8],
+                parts[12],
+                parts[13],
+            )
+
+    except KeyError:
+        logger.warning("Description file not found: %s", member_name)
+
+    return descr_map
+
+
+def _load_speakermap(
+    archive: StanfordArchive,
+    member_name: str,
+    stats: CongressStats,
+) -> dict[str, tuple[str, ...]]:
+    """Load normalized speaker metadata keyed by speech_id."""
+    smap_map: dict[str, tuple[str, ...]] = {}
+
+    try:
+        lines = archive.iter_member_lines(member_name, validate=True)
+        header = next(lines, None)
+        if header is None:
+            logger.warning("Empty SpeakerMap file: %s", member_name)
+            return smap_map
+
+        for line_number, line in enumerate(lines, start=2):
+            parts = line.rstrip("\r\n").split("|")
+            if len(parts) < 10:
+                logger.warning(
+                    "Skipping malformed SpeakerMap line %s:%d (%d fields)",
+                    member_name,
+                    line_number,
+                    len(parts),
+                )
+                continue
+
+            speech_id = parts[1]
+            if speech_id in smap_map:
+                stats.duplicate_smap_ids += 1
+
+            # speakerid, lastname, firstname, chamber, state, gender,
+            # party, district, nonvoting
+            smap_map[speech_id] = (
+                parts[0],
+                parts[2],
+                parts[3],
+                parts[4],
+                parts[5],
+                parts[6],
+                parts[7],
+                parts[8],
+                parts[9],
+            )
+
+    except KeyError:
+        logger.warning("SpeakerMap file not found: %s", member_name)
+
+    return smap_map
+
+
+def _build_record(
+    *,
+    congress_num: int,
+    source: str,
+    speech_id_raw: str,
+    text: str,
+    descr: tuple[str, ...] | None,
+    speaker_meta: tuple[str, ...] | None,
+) -> dict[str, object]:
+    """Resolve one speech plus optional metadata into the Parquet schema."""
+    speech_id = _safe_int(speech_id_raw)
+
+    date_str = descr[1] if descr else ""
+    year = int(date_str[:4]) if len(date_str) >= 4 and date_str[:4].isdigit() else None
+
+    chamber = ""
+    if speaker_meta and speaker_meta[3]:
+        chamber = _clean_unknown(speaker_meta[3])
+    elif descr:
+        chamber = _clean_unknown(descr[0])
+
+    speaker_id = _safe_int(speaker_meta[0]) if speaker_meta else None
+
+    first_name = ""
+    last_name = ""
+    state = ""
+    gender = ""
+
+    if speaker_meta:
+        first_name = _clean_unknown(speaker_meta[2])
+        last_name = _clean_unknown(speaker_meta[1])
+        state = _clean_unknown(speaker_meta[4])
+        gender = _clean_unknown(speaker_meta[5])
+
+    if descr:
+        if not first_name:
+            first_name = _clean_unknown(descr[3])
+        if not last_name:
+            last_name = _clean_unknown(descr[4])
+        if not state:
+            state = _clean_unknown(descr[5])
+        if not gender:
+            gender = _clean_unknown(descr[6])
+
+    raw_speaker = _clean_unknown(descr[2]) if descr else ""
+    party = _clean_unknown(speaker_meta[6]) if speaker_meta else ""
+    district = _clean_unknown(speaker_meta[7]) if speaker_meta else ""
+    nonvoting = _clean_unknown(speaker_meta[8]) if speaker_meta else ""
+
+    char_count = _safe_int(descr[7]) if descr else None
+    if char_count is None:
+        char_count = len(text)
+
+    word_count = _safe_int(descr[8]) if descr else None
+    if word_count is None:
+        word_count = len(text.split())
+
+    return {
+        "speech_id": speech_id,
+        "congress": congress_num,
+        "date": date_str,
+        "year": year,
+        "chamber": chamber,
+        "speaker_id": speaker_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "speaker": raw_speaker,
+        "state": state,
+        "gender": gender,
+        "party": party,
+        "district": district,
+        "nonvoting": nonvoting,
+        "char_count": char_count,
+        "word_count": word_count,
+        "speech_text": text,
+        "source": source,
+    }
+
+
+def _flush_batch(
+    writer: pq.ParquetWriter,
+    batch: BatchBuffer,
+) -> int:
+    """Write one in-memory batch and return the number of rows written."""
+    if len(batch) == 0:
+        return 0
+
+    rows = len(batch)
+    table = batch.to_table()
+    writer.write_table(table)
+    batch.clear()
+    return rows
+
+
+def _validate_parquet_file(path: Path, expected_rows: int) -> None:
+    """Perform a lightweight structural check before publishing the file."""
+    parquet_file = pq.ParquetFile(path)
+    actual_rows = parquet_file.metadata.num_rows
+
+    if actual_rows != expected_rows:
+        raise RuntimeError(
+            f"Parquet row-count mismatch for {path.name}: "
+            f"expected {expected_rows:,}, got {actual_rows:,}"
         )
 
-    raw_fp.seek(offset)
-    header = raw_fp.read(30)
-    (
-        _,
-        _,
-        _,
-        ctype,
-        _,
-        _,
-        _,
-        c_size_hdr,
-        u_size_hdr,
-        fname_len,
-        extra_len,
-    ) = struct.unpack("<4sHHHHHIIIHH", header)
-
-    data_offset = offset + 30 + fname_len + extra_len
-    raw_fp.seek(data_offset)
-
-    read_size = (
-        zinfo.compress_size
-        if zinfo.compress_size > 0
-        else (c_size_hdr if c_size_hdr > 0 else zinfo.file_size)
-    )
-
-    if ctype == 8:  # Deflate
-        raw_compressed = raw_fp.read(read_size)
-        decompressed = zlib.decompress(raw_compressed, -15)
-        return io.BytesIO(decompressed)
-    elif ctype == 0:  # Stored
-        raw_data = raw_fp.read(read_size)
-        return io.BytesIO(raw_data)
-    else:
-        raise ValueError(
-            f"Unsupported compression type {ctype} for {zinfo.filename}"
-        )
-
-
-def get_archive_for_congress(congress_num: int) -> Tuple[Path, str]:
-    """Return the zip file path and internal prefix for a given Congress number."""
-    if 43 <= congress_num <= 111:
-        return find_zip_path("hein-bound.zip"), "hein-bound"
-    elif 112 <= congress_num <= 114:
-        return find_zip_path("hein-daily.zip"), "hein-daily"
-    else:
-        raise ValueError(
-            f"Congress {congress_num} is outside canonical range (43-114)."
+    if parquet_file.schema_arrow != PARQUET_SCHEMA:
+        raise RuntimeError(
+            f"Parquet schema mismatch for {path.name}:\n"
+            f"expected: {PARQUET_SCHEMA}\n"
+            f"actual:   {parquet_file.schema_arrow}"
         )
 
 
 def process_single_congress(
     congress_num: int,
     out_dir: Path,
+    *,
     force: bool = False,
-) -> Optional[Path]:
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> Path:
     """
-    Process a single Congress from its source ZIP into a compressed Parquet file.
-    Returns the path to the generated parquet file, or None if skipped/error.
+    Process one Congress into a compressed Parquet file.
+
+    The final filename appears only after the ZIP members have been fully read,
+    archive integrity validation has succeeded, Parquet writing has completed,
+    and the output row count/schema have been validated.
     """
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero")
+
     c_str = f"{congress_num:03d}"
     out_dir.mkdir(parents=True, exist_ok=True)
+
     out_file = out_dir / f"congress_{c_str}.parquet"
+    tmp_file = out_dir / f"congress_{c_str}.parquet.tmp"
 
     if out_file.exists() and not force:
         logger.info(
-            f"Congress {congress_num:03d} already processed at {out_file.name}. Skipping (use --force to overwrite)."
+            "Congress %s already processed at %s. Skipping (use --force to overwrite).",
+            c_str,
+            out_file.name,
         )
         return out_file
 
-    t0 = time.time()
-    zip_path, prefix = get_archive_for_congress(congress_num)
+    if tmp_file.exists():
+        logger.warning("Removing stale temporary file: %s", tmp_file.name)
+        tmp_file.unlink()
+
+    spec = get_archive_for_congress(congress_num)
+    names = congress_member_names(congress_num, spec.prefix)
+    stats = CongressStats(congress=congress_num, source=spec.prefix)
+
     logger.info(
-        f"Processing Congress {congress_num:03d} from {zip_path.name} -> {out_file.name}..."
+        "Processing Congress %s from %s -> %s",
+        c_str,
+        spec.path.name,
+        out_file.name,
     )
 
-    with open(zip_path, "rb") as raw_fp:
-        with zipfile.ZipFile(zip_path, "r") as z:
-            # 1. Load description metadata (speech_id -> metadata tuple)
-            descr_name = f"{prefix}/descr_{c_str}.txt"
-            descr_map: Dict[str, Tuple] = {}
+    started = time.time()
+    writer: pq.ParquetWriter | None = None
+
+    try:
+        with StanfordArchive(spec.path) as archive:
+            logger.info("Loading descr metadata for Congress %s...", c_str)
+            descr_map = _load_descr_map(archive, names["descr"], stats)
+            logger.info("Loaded %s descr records", f"{len(descr_map):,}")
+
+            logger.info("Loading SpeakerMap metadata for Congress %s...", c_str)
+            smap_map = _load_speakermap(archive, names["speakermap"], stats)
+            logger.info("Loaded %s SpeakerMap records", f"{len(smap_map):,}")
+
+            writer = pq.ParquetWriter(
+                tmp_file,
+                PARQUET_SCHEMA,
+                compression="zstd",
+                compression_level=3,
+                use_dictionary=True,
+            )
+
+            batch = BatchBuffer()
+            lines = archive.iter_member_lines(
+                names["speeches"],
+                validate=True,
+            )
+
+            header = next(lines, None)
+            if header is None:
+                raise RuntimeError(f"Empty speeches file: {names['speeches']}")
+
+            for line_number, line in enumerate(lines, start=2):
+                raw = line.rstrip("\r\n")
+                parts = raw.split("|", 1)
+
+                if len(parts) != 2:
+                    stats.malformed_speech_lines += 1
+                    raise RuntimeError(
+                        f"Malformed speech line {names['speeches']}:{line_number}; "
+                        "refusing to silently drop a research record"
+                    )
+
+                speech_id_raw, text = parts
+                descr = descr_map.get(speech_id_raw)
+                speaker_meta = smap_map.get(speech_id_raw)
+
+                if descr is not None:
+                    stats.matched_descr += 1
+                if speaker_meta is not None:
+                    stats.matched_smap += 1
+
+                batch.append(
+                    _build_record(
+                        congress_num=congress_num,
+                        source=spec.prefix,
+                        speech_id_raw=speech_id_raw,
+                        text=text,
+                        descr=descr,
+                        speaker_meta=speaker_meta,
+                    )
+                )
+                stats.total_speeches += 1
+
+                if len(batch) >= batch_size:
+                    _flush_batch(writer, batch)
+
+            _flush_batch(writer, batch)
+
+        # Closing the writer writes the Parquet footer. Do this before validation.
+        writer.close()
+        writer = None
+
+        if stats.total_speeches == 0:
+            raise RuntimeError(f"Congress {c_str} produced zero speech records")
+
+        _validate_parquet_file(tmp_file, stats.total_speeches)
+
+        # Publish only a complete, validated file.
+        tmp_file.replace(out_file)
+
+    except Exception:
+        if writer is not None:
             try:
-                descr_info = z.getinfo(descr_name)
-                stream = get_entry_stream(raw_fp, descr_info)
-                stream.readline()  # skip header
-                for line in stream:
-                    parts = (
-                        line.decode("utf-8", errors="replace")
-                        .rstrip("\r\n")
-                        .split("|")
-                    )
-                    if parts and len(parts) >= 14:
-                        # 0: speech_id, 1: chamber, 2: date, 4: speaker, 5: first_name, 6: last_name, 7: state, 8: gender, 12: char_count, 13: word_count
-                        descr_map[parts[0]] = (
-                            parts[1],
-                            parts[2],
-                            parts[4],
-                            parts[5],
-                            parts[6],
-                            parts[7],
-                            parts[8],
-                            parts[12],
-                            parts[13],
-                        )
-            except KeyError:
-                logger.warning(
-                    f"Description file {descr_name} not found in {zip_path.name}"
-                )
+                writer.close()
+            except Exception:
+                logger.exception("Error while closing failed Parquet writer")
 
-            # 2. Load SpeakerMap (speech_id -> speaker details tuple)
-            smap_name = f"{prefix}/{c_str}_SpeakerMap.txt"
-            smap_map: Dict[str, Tuple] = {}
-            try:
-                smap_info = z.getinfo(smap_name)
-                stream = get_entry_stream(raw_fp, smap_info)
-                stream.readline()  # skip header
-                for line in stream:
-                    parts = (
-                        line.decode("utf-8", errors="replace")
-                        .rstrip("\r\n")
-                        .split("|")
-                    )
-                    if parts and len(parts) >= 10:
-                        # 0: speakerid, 1: speech_id, 2: lastname, 3: firstname, 4: chamber, 5: state, 6: gender, 7: party, 8: district, 9: nonvoting
-                        smap_map[parts[1]] = (
-                            parts[0],
-                            parts[2],
-                            parts[3],
-                            parts[4],
-                            parts[5],
-                            parts[6],
-                            parts[7],
-                            parts[8],
-                            parts[9],
-                        )
-            except KeyError:
-                logger.warning(
-                    f"SpeakerMap file {smap_name} not found in {zip_path.name}"
-                )
+        if tmp_file.exists():
+            tmp_file.unlink()
+        raise
 
-            # 3. Stream speeches and assemble record arrays
-            speeches_name = f"{prefix}/speeches_{c_str}.txt"
-            speech_ids: List[Optional[int]] = []
-            congresses: List[int] = []
-            dates: List[str] = []
-            years: List[Optional[int]] = []
-            chambers: List[str] = []
-            speaker_ids: List[Optional[int]] = []
-            first_names: List[str] = []
-            last_names: List[str] = []
-            speakers: List[str] = []
-            states: List[str] = []
-            genders: List[str] = []
-            parties: List[str] = []
-            districts: List[str] = []
-            nonvotings: List[str] = []
-            char_counts: List[int] = []
-            word_counts: List[int] = []
-            speeches_text: List[str] = []
-            sources: List[str] = []
+    elapsed = time.time() - started
+    file_size_mb = out_file.stat().st_size / (1024 * 1024)
 
-            matched_descr = 0
-            matched_smap = 0
+    descr_rate = (
+        100.0 * stats.matched_descr / stats.total_speeches
+        if stats.total_speeches
+        else 0.0
+    )
+    smap_rate = (
+        100.0 * stats.matched_smap / stats.total_speeches
+        if stats.total_speeches
+        else 0.0
+    )
 
-            sp_info = z.getinfo(speeches_name)
-            stream = get_entry_stream(raw_fp, sp_info)
-            stream.readline()  # skip header
+    logger.info(
+        "Done Congress %s: %s speeches -> %.1f MB in %.1fs",
+        c_str,
+        f"{stats.total_speeches:,}",
+        file_size_mb,
+        elapsed,
+    )
+    logger.info(
+        "Metadata matches: descr %s (%.1f%%), SpeakerMap %s (%.1f%%)",
+        f"{stats.matched_descr:,}",
+        descr_rate,
+        f"{stats.matched_smap:,}",
+        smap_rate,
+    )
 
-            for line in stream:
-                parts = (
-                    line.decode("utf-8", errors="replace")
-                    .rstrip("\r\n")
-                    .split("|", 1)
-                )
-                if len(parts) == 2:
-                    sid, text = parts
-                    d = descr_map.get(sid)
-                    sm = smap_map.get(sid)
-
-                    if d:
-                        matched_descr += 1
-                    if sm:
-                        matched_smap += 1
-
-                    speech_ids.append(int(sid) if sid.isdigit() else None)
-                    congresses.append(congress_num)
-
-                    date_str = d[1] if d else ""
-                    dates.append(date_str)
-                    yr = (
-                        int(date_str[:4])
-                        if (
-                            date_str
-                            and len(date_str) >= 4
-                            and date_str[:4].isdigit()
-                        )
-                        else None
-                    )
-                    years.append(yr)
-
-                    # Chamber resolution
-                    chamber = (
-                        sm[3]
-                        if sm and sm[3]
-                        else (d[0] if d and d[0] and d[0] != "None" else "")
-                    )
-                    chambers.append(chamber)
-
-                    # Speaker metadata resolution
-                    sp_id = sm[0] if sm else ""
-                    speaker_ids.append(int(sp_id) if sp_id.isdigit() else None)
-
-                    fn = (
-                        sm[2]
-                        if sm and sm[2]
-                        else (d[3] if d and d[3] != "Unknown" else "")
-                    )
-                    ln = (
-                        sm[1]
-                        if sm and sm[1]
-                        else (d[4] if d and d[4] != "Unknown" else "")
-                    )
-                    first_names.append(fn)
-                    last_names.append(ln)
-
-                    raw_sp = d[2] if d else ""
-                    speakers.append(raw_sp)
-
-                    st = (
-                        sm[4]
-                        if sm and sm[4]
-                        else (d[5] if d and d[5] != "Unknown" else "")
-                    )
-                    states.append(st)
-
-                    gen = (
-                        sm[5]
-                        if sm and sm[5]
-                        else (d[6] if d and d[6] != "Unknown" else "")
-                    )
-                    genders.append(gen)
-
-                    pty = sm[6] if sm else ""
-                    parties.append(pty)
-
-                    dist = sm[7] if sm else ""
-                    districts.append(dist)
-
-                    nv = sm[8] if sm else ""
-                    nonvotings.append(nv)
-
-                    cc = (
-                        int(d[7])
-                        if d and d[7].isdigit()
-                        else (len(text) if text else 0)
-                    )
-                    wc = (
-                        int(d[8])
-                        if d and d[8].isdigit()
-                        else (len(text.split()) if text else 0)
-                    )
-                    char_counts.append(cc)
-                    word_counts.append(wc)
-
-                    speeches_text.append(text)
-                    sources.append(prefix)
-
-        # Build PyArrow table with compact types
-        table = pa.Table.from_arrays(
-            [
-                pa.array(speech_ids, type=pa.int64()),
-                pa.array(congresses, type=pa.int32()),
-                pa.array(dates, type=pa.string()),
-                pa.array(years, type=pa.int32()),
-                pa.array(chambers, type=pa.string()),
-                pa.array(speaker_ids, type=pa.int64()),
-                pa.array(first_names, type=pa.string()),
-                pa.array(last_names, type=pa.string()),
-                pa.array(speakers, type=pa.string()),
-                pa.array(states, type=pa.string()),
-                pa.array(genders, type=pa.string()),
-                pa.array(parties, type=pa.string()),
-                pa.array(districts, type=pa.string()),
-                pa.array(nonvotings, type=pa.string()),
-                pa.array(char_counts, type=pa.int32()),
-                pa.array(word_counts, type=pa.int32()),
-                pa.array(speeches_text, type=pa.string()),
-                pa.array(sources, type=pa.string()),
-            ],
-            names=[
-                "speech_id",
-                "congress",
-                "date",
-                "year",
-                "chamber",
-                "speaker_id",
-                "first_name",
-                "last_name",
-                "speaker",
-                "state",
-                "gender",
-                "party",
-                "district",
-                "nonvoting",
-                "char_count",
-                "word_count",
-                "speech_text",
-                "source",
-            ],
+    if stats.malformed_speech_lines:
+        logger.warning(
+            "Congress %s had %s malformed speech lines",
+            c_str,
+            f"{stats.malformed_speech_lines:,}",
+        )
+    if stats.duplicate_descr_ids:
+        logger.warning(
+            "Congress %s had %s duplicate descr speech IDs",
+            c_str,
+            f"{stats.duplicate_descr_ids:,}",
+        )
+    if stats.duplicate_smap_ids:
+        logger.warning(
+            "Congress %s had %s duplicate SpeakerMap speech IDs",
+            c_str,
+            f"{stats.duplicate_smap_ids:,}",
         )
 
-        # Write Parquet with zstd compression
-        pq.write_table(
-            table,
-            out_file,
-            compression="zstd",
-            compression_level=3,
-            use_dictionary=True,
-        )
-
-        elapsed = time.time() - t0
-        file_size_mb = out_file.stat().st_size / (1024 * 1024)
-        total_speeches = len(table)
-        logger.info(
-            f"Done Congress {congress_num:03d}: {total_speeches:,} speeches ({matched_smap:,} identified speakers) -> {file_size_mb:.1f} MB in {elapsed:.2f}s"
-        )
-        return out_file
+    return out_file
 
 
 def process_range(
     start_c: int,
     end_c: int,
     out_dir: Path,
+    *,
     force: bool = False,
-):
-    """Process a range of Congresses inclusive."""
-    logger.info(
-        f"Starting batch processing for Congresses {start_c:03d} to {end_c:03d}..."
-    )
-    total_start = time.time()
-    count = 0
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> list[int]:
+    """
+    Process an inclusive Congress range.
 
-    for c in range(start_c, end_c + 1):
+    Returns a list of Congress numbers that failed. Individual failures are
+    logged and processing continues so one bad Congress does not discard a long
+    batch run.
+    """
+    if start_c > end_c:
+        raise ValueError("--start must be less than or equal to --end")
+
+    logger.info(
+        "Starting batch processing for Congresses %03d to %03d...",
+        start_c,
+        end_c,
+    )
+
+    started = time.time()
+    succeeded = 0
+    failures: list[int] = []
+
+    for congress_num in range(start_c, end_c + 1):
         try:
-            res = process_single_congress(c, out_dir, force=force)
-            if res:
-                count += 1
-        except Exception as e:
-            logger.error(f"Error processing Congress {c}: {e}", exc_info=True)
+            process_single_congress(
+                congress_num,
+                out_dir,
+                force=force,
+                batch_size=batch_size,
+            )
+            succeeded += 1
+        except Exception:
+            failures.append(congress_num)
+            logger.exception(
+                "Error processing Congress %03d",
+                congress_num,
+            )
 
-    elapsed = time.time() - total_start
+    elapsed = time.time() - started
     logger.info(
-        f"Completed batch of {count} Congresses in {elapsed:.1f}s ({elapsed/max(1, count):.1f}s/congress avg)."
+        "Batch finished: %d succeeded, %d failed, %.1fs total",
+        succeeded,
+        len(failures),
+        elapsed,
     )
 
+    if failures:
+        logger.error(
+            "Failed Congresses: %s",
+            ", ".join(f"{c:03d}" for c in failures),
+        )
 
-def main():
+    return failures
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Process Stanford Congressional Record ZIP files into Parquet."
+        description=(
+            "Process Stanford Congressional Record ZIP files into compressed "
+            "Parquet. Phase 1 defaults to Congresses 077-096."
+        )
     )
     parser.add_argument(
         "--congress",
         "-c",
         type=int,
-        help="Process a single Congress number (43 to 114)",
+        help="Process one Congress number",
     )
     parser.add_argument(
         "--start",
         type=int,
-        default=43,
-        help="Start Congress number (default: 43)",
+        default=PHASE1_START,
+        help=f"Start Congress number (default: {PHASE1_START})",
     )
     parser.add_argument(
         "--end",
         type=int,
-        default=114,
-        help="End Congress number (default: 114)",
+        default=PHASE1_END,
+        help=f"End Congress number (default: {PHASE1_END})",
     )
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Process all 72 canonical Congresses (43 to 114)",
+        help=(
+            "Process the complete Phase 1 research corpus "
+            f"({PHASE1_START:03d}-{PHASE1_END:03d})"
+        ),
     )
     parser.add_argument(
         "--force",
         "-f",
         action="store_true",
-        help="Overwrite existing parquet files",
+        help="Overwrite existing Parquet files",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=(
+            "Number of speech records per Parquet write batch "
+            f"(default: {DEFAULT_BATCH_SIZE:,})"
+        ),
     )
     parser.add_argument(
         "--out-dir",
         "-o",
         type=str,
         default="data/processed",
-        help="Output directory for parquet files (default: data/processed)",
+        help="Output directory (default: data/processed)",
     )
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parent.parent
     out_dir = project_root / args.out_dir
 
-    if args.congress:
-        process_single_congress(args.congress, out_dir, force=args.force)
-    elif args.all:
-        process_range(43, 114, out_dir, force=args.force)
-    else:
-        process_range(args.start, args.end, out_dir, force=args.force)
+    try:
+        if args.congress is not None:
+            process_single_congress(
+                args.congress,
+                out_dir,
+                force=args.force,
+                batch_size=args.batch_size,
+            )
+            return 0
+
+        if args.all:
+            start_c, end_c = PHASE1_START, PHASE1_END
+        else:
+            start_c, end_c = args.start, args.end
+
+        failures = process_range(
+            start_c,
+            end_c,
+            out_dir,
+            force=args.force,
+            batch_size=args.batch_size,
+        )
+        return 1 if failures else 0
+
+    except Exception:
+        logger.exception("Corpus processing failed")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
