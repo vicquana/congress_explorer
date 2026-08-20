@@ -184,6 +184,62 @@ st.caption(
     f"{stats['total_speeches']:,} speeches"
 )
 
+st.markdown(
+    """
+**Data source:** Matthew Gentzkow, Jesse M. Shapiro, and Matt Taddy,
+*Congressional Record for the 43rd–114th Congresses: Parsed Speeches and Phrase Counts*
+(Stanford Libraries, 2018).
+
+This explorer uses a Parquet-formatted derivative of the Stanford dataset,
+hosted on Hugging Face for reproducible research.
+"""
+)
+
+with st.expander("About the data and citation"):
+    st.markdown(
+        """
+### Original dataset
+
+Matthew Gentzkow, Jesse M. Shapiro, and Matt Taddy.  
+*Congressional Record for the 43rd–114th Congresses: Parsed Speeches and Phrase Counts*.  
+Palo Alto, CA: Stanford Libraries [distributor], 2018-01-16.
+
+**Original dataset:**  
+https://data.stanford.edu/congress_text
+
+**License:** Open Data Commons Attribution License (ODC-BY 1.0)
+
+### Parquet research edition
+
+This application uses a Congress-level Parquet representation of the Stanford
+dataset:
+
+**Hugging Face dataset:**  
+https://huggingface.co/datasets/yeeder/congressional-record-parquet
+
+The deployed corpus is pinned to revision:
+
+`f3352e5eddac0f4596ba68a0e5bfbcd225449b6c`
+
+### Recommended citation
+
+Please cite the original Stanford dataset in scholarly work. For reproducibility,
+also record the Hugging Face dataset repository and revision used by this explorer.
+
+```bibtex
+@dataset{gentzkow2018congressionalrecord,
+  author    = {Matthew Gentzkow and Jesse M. Shapiro and Matt Taddy},
+  title     = {Congressional Record for the 43rd-114th Congresses:
+               Parsed Speeches and Phrase Counts},
+  publisher = {Stanford Libraries},
+  address   = {Palo Alto, CA},
+  year      = {2018},
+  url       = {https://data.stanford.edu/congress_text}
+}
+```
+"""
+    )
+
 with st.expander("About this research corpus"):
     st.markdown(
         """
