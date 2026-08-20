@@ -1,31 +1,30 @@
 """
-DuckDB search backend for the full Stanford Congressional Record Parquet corpus.
+DuckDB search backend for the Stanford Congressional Record Parquet corpus.
 
-The backend searches every canonical Stanford Congress Parquet currently
-available in data/processed/, limited to Congresses 043-114.
+The canonical research corpus remains the Congress-level Parquet files.
+Literal searches scan the corpus once, then materialize only matching IDs and
+sort keys into a small derived search-cache Parquet. Pagination reads that
+cache instead of rescanning every speech.
 
-Search semantics in this V1 are deliberately simple and transparent:
-
-* exact_phrase  -> literal case-insensitive substring search
-* all_words     -> every whitespace-separated term must occur somewhere
-* any_word      -> at least one whitespace-separated term must occur
-* regex         -> case-insensitive regular expression (kept for compatibility)
-
-"all_words" and "any_word" are substring searches, not linguistic token
-searches. The researcher-facing UI should describe them as "Contains all
-terms" / "Contains any term" rather than implying stemming or word boundaries.
+This keeps retrieval semantics transparent while making Next/Previous fast.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import html
+import json
+import os
 from pathlib import Path
 import re
 from typing import Any, Optional
 
 import duckdb
 import pandas as pd
+import pyarrow.parquet as pq
+
+from app.data_loader import resolve_processed_dir
 
 
 CORPUS_START = 43
@@ -70,36 +69,44 @@ class SearchFilter:
 
 
 class SearchEngine:
-    """Search the canonical Congress 043-114 Parquet corpus with DuckDB."""
+    """Literal-search backend with disk-backed result caching."""
 
-    def __init__(self, processed_dir: Optional[Path | str] = None):
+    def __init__(
+        self,
+        processed_dir: Optional[Path | str] = None,
+        cache_dir: Optional[Path | str] = None,
+    ):
         self.project_root = Path(__file__).resolve().parent.parent
 
         if processed_dir is None:
-            self.processed_dir = self.project_root / "data" / "processed"
+            self.processed_dir = resolve_processed_dir(self.project_root)
         else:
             self.processed_dir = Path(processed_dir)
 
+        if cache_dir is None:
+            env_cache_dir = os.getenv("CONGRESS_SEARCH_CACHE_DIR")
+            self.cache_dir = (
+                Path(env_cache_dir)
+                if env_cache_dir
+                else self.project_root / "data" / "search_cache"
+            )
+        else:
+            self.cache_dir = Path(cache_dir)
+
         self.con = duckdb.connect(database=":memory:")
+        self.con.execute("SET preserve_insertion_order = false")
+
         self._view_initialized = False
         self._view_files: tuple[Path, ...] = ()
 
-        # Keep temporary work bounded and avoid surprising disk-heavy behavior.
-        self.con.execute("SET preserve_insertion_order = false")
-
     def close(self) -> None:
-        """Close the in-memory DuckDB connection."""
         try:
             self.con.close()
         except Exception:
             pass
 
     def get_parquet_files(self) -> list[Path]:
-        """
-        Return canonical Stanford Parquet files for Congresses 043-114.
-
-        Files outside this range are ignored.
-        """
+        """Return canonical Congress 043-114 Parquet files."""
         if not self.processed_dir.exists():
             return []
 
@@ -118,11 +125,9 @@ class SearchEngine:
 
     @staticmethod
     def _quote_path(path: Path) -> str:
-        """Quote a local path for a DuckDB SQL string literal."""
         return "'" + str(path.resolve()).replace("'", "''") + "'"
 
     def _ensure_view(self) -> bool:
-        """Create/recreate the DuckDB view over the current canonical corpus files."""
         files = tuple(self.get_parquet_files())
 
         if not files:
@@ -148,8 +153,25 @@ class SearchEngine:
         self._view_files = files
         return True
 
+    def corpus_signature(self) -> str:
+        """
+        Fingerprint the current corpus using file names, sizes, and mtimes.
+
+        Search-cache keys include this signature, so replacing a corpus Parquet
+        automatically produces a new cache rather than silently reusing stale
+        search results.
+        """
+        parts: list[str] = []
+
+        for path in self.get_parquet_files():
+            stat = path.stat()
+            parts.append(
+                f"{path.name}:{stat.st_size}:{stat.st_mtime_ns}"
+            )
+
+        return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+
     def get_corpus_stats(self) -> dict[str, Any]:
-        """Return lightweight summary statistics for the indexed canonical corpus."""
         files = self.get_parquet_files()
 
         if not files or not self._ensure_view():
@@ -168,12 +190,12 @@ class SearchEngine:
         row = self.con.execute(
             """
             SELECT
-                COUNT(DISTINCT congress) AS congress_count,
-                MIN(congress) AS congress_min,
-                MAX(congress) AS congress_max,
-                COUNT(*) AS total_speeches,
-                MIN(year) AS year_min,
-                MAX(year) AS year_max
+                COUNT(DISTINCT congress),
+                MIN(congress),
+                MAX(congress),
+                COUNT(*),
+                MIN(year),
+                MAX(year)
             FROM speeches
             """
         ).fetchone()
@@ -201,20 +223,12 @@ class SearchEngine:
 
     @staticmethod
     def _split_terms(query: str) -> list[str]:
-        """Split a simple query on whitespace, preserving no empty terms."""
         return [term for term in re.split(r"\s+", query.strip()) if term]
 
     def _build_where_clause(
         self,
         sf: SearchFilter,
     ) -> tuple[str, list[Any], list[str]]:
-        """
-        Build a parameterized WHERE clause.
-
-        Text matching uses strpos(lower(text), lower(?)) rather than SQL LIKE.
-        That makes %, _ and other user characters literal instead of wildcard
-        syntax, which is easier to explain to researchers.
-        """
         conditions: list[str] = []
         params: list[Any] = []
         highlight_terms: list[str] = []
@@ -241,7 +255,6 @@ class SearchEngine:
                     highlight_terms.extend(terms)
 
             elif sf.search_mode == "regex":
-                # Kept for compatibility with the existing Streamlit prototype.
                 conditions.append(
                     "regexp_matches(coalesce(speech_text, ''), ?, 'i')"
                 )
@@ -271,6 +284,7 @@ class SearchEngine:
                 for c in sf.congress_list
                 if CORPUS_START <= int(c) <= CORPUS_END
             ]
+
             if not congresses:
                 conditions.append("FALSE")
             else:
@@ -281,7 +295,9 @@ class SearchEngine:
         if sf.chambers:
             chambers = [str(c).upper() for c in sf.chambers]
             placeholders = ", ".join("?" for _ in chambers)
-            conditions.append(f"upper(coalesce(chamber, '')) IN ({placeholders})")
+            conditions.append(
+                f"upper(coalesce(chamber, '')) IN ({placeholders})"
+            )
             params.extend(chambers)
 
         if sf.parties:
@@ -302,28 +318,31 @@ class SearchEngine:
         if sf.states:
             states = [str(state).upper() for state in sf.states]
             placeholders = ", ".join("?" for _ in states)
-            conditions.append(f"upper(coalesce(state, '')) IN ({placeholders})")
+            conditions.append(
+                f"upper(trim(coalesce(state, ''))) IN ({placeholders})"
+            )
             params.extend(states)
 
         speaker_query = sf.speaker_query.strip()
         if speaker_query:
-            speaker_condition = """
-            (
-                strpos(lower(coalesce(speaker, '')), lower(?)) > 0
-                OR strpos(lower(coalesce(first_name, '')), lower(?)) > 0
-                OR strpos(lower(coalesce(last_name, '')), lower(?)) > 0
-                OR strpos(
-                    lower(
-                        trim(
-                            coalesce(first_name, '') || ' ' ||
-                            coalesce(last_name, '')
-                        )
-                    ),
-                    lower(?)
-                ) > 0
+            conditions.append(
+                """
+                (
+                    strpos(lower(coalesce(speaker, '')), lower(?)) > 0
+                    OR strpos(lower(coalesce(first_name, '')), lower(?)) > 0
+                    OR strpos(lower(coalesce(last_name, '')), lower(?)) > 0
+                    OR strpos(
+                        lower(
+                            trim(
+                                coalesce(first_name, '') || ' ' ||
+                                coalesce(last_name, '')
+                            )
+                        ),
+                        lower(?)
+                    ) > 0
+                )
+                """
             )
-            """
-            conditions.append(speaker_condition)
             params.extend([speaker_query] * 4)
 
         if not conditions:
@@ -332,152 +351,246 @@ class SearchEngine:
         return "WHERE " + " AND ".join(conditions), params, highlight_terms
 
     @staticmethod
-    def _order_clause(sort_by: str) -> str:
-        # speech_id gives deterministic ordering for ties.
+    def _order_expression(sort_by: str) -> str:
         if sort_by == "date_desc":
-            return "ORDER BY date DESC NULLS LAST, speech_id DESC"
+            return "date DESC NULLS LAST, speech_id DESC"
         if sort_by == "word_count_desc":
             return (
-                "ORDER BY word_count DESC NULLS LAST, "
+                "word_count DESC NULLS LAST, "
                 "date ASC NULLS LAST, speech_id ASC"
             )
         if sort_by == "word_count_asc":
             return (
-                "ORDER BY word_count ASC NULLS LAST, "
+                "word_count ASC NULLS LAST, "
                 "date ASC NULLS LAST, speech_id ASC"
             )
-        return "ORDER BY date ASC NULLS LAST, speech_id ASC"
+        return "date ASC NULLS LAST, speech_id ASC"
+
+    def _search_cache_key(self, sf: SearchFilter) -> str:
+        """
+        Build a stable key that intentionally ignores limit/offset.
+
+        All pages of the same search therefore share one materialized result.
+        """
+        payload = {
+            "corpus": self.corpus_signature(),
+            "query": sf.query.strip(),
+            "search_mode": sf.search_mode,
+            "year_min": sf.year_min,
+            "year_max": sf.year_max,
+            "congress_list": sorted(sf.congress_list or []),
+            "chambers": sorted(sf.chambers or []),
+            "parties": sorted(sf.parties or []),
+            "states": sorted(sf.states or []),
+            "speaker_query": sf.speaker_query.strip(),
+            "sort_by": sf.sort_by,
+            "cache_version": 1,
+        }
+
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _prune_search_cache(self, protected: Optional[Path] = None) -> None:
+        """Bound derived search-cache disk usage for small deployment hosts."""
+        if not self.cache_dir.exists():
+            return
+
+        max_mb = int(os.getenv("CONGRESS_SEARCH_CACHE_MAX_MB", "512"))
+        max_files = int(os.getenv("CONGRESS_SEARCH_CACHE_MAX_FILES", "100"))
+        max_bytes = max_mb * 1024 * 1024
+
+        files = [
+            path
+            for path in self.cache_dir.glob("search_*.parquet")
+            if path.is_file() and path != protected
+        ]
+        files.sort(key=lambda path: path.stat().st_mtime)
+
+        def total_size() -> int:
+            return sum(path.stat().st_size for path in files if path.exists())
+
+        while files and (
+            len(files) + (1 if protected and protected.exists() else 0) > max_files
+            or total_size()
+            + (
+                protected.stat().st_size
+                if protected and protected.exists()
+                else 0
+            )
+            > max_bytes
+        ):
+            oldest = files.pop(0)
+            try:
+                oldest.unlink()
+            except FileNotFoundError:
+                pass
+
+    def _materialize_search(
+        self,
+        sf: SearchFilter,
+    ) -> tuple[Path, int, list[str], bool]:
+        """
+        Scan the corpus once and persist matching IDs/sort keys.
+
+        Returns:
+            (cache_path, total_matches, highlight_terms, cache_hit)
+        """
+        if not self._ensure_view():
+            raise RuntimeError("No Congressional Record Parquet corpus found")
+
+        where_clause, params, highlight_terms = self._build_where_clause(sf)
+        order_expression = self._order_expression(sf.sort_by)
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        key = self._search_cache_key(sf)
+        cache_path = self.cache_dir / f"search_{key}.parquet"
+
+        if cache_path.is_file():
+            try:
+                os.utime(cache_path, None)
+            except OSError:
+                pass
+            self._prune_search_cache(protected=cache_path)
+            total = pq.ParquetFile(cache_path).metadata.num_rows
+            return cache_path, int(total), highlight_terms, True
+
+        tmp_path = self.cache_dir / f"search_{key}.parquet.tmp"
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+        sql = f"""
+            COPY (
+                SELECT
+                    speech_id,
+                    congress,
+                    date,
+                    year,
+                    word_count,
+                    row_number() OVER (
+                        ORDER BY {order_expression}
+                    ) AS result_rank
+                FROM speeches
+                {where_clause}
+                ORDER BY {order_expression}
+            )
+            TO {self._quote_path(tmp_path)}
+            (
+                FORMAT PARQUET,
+                COMPRESSION ZSTD
+            )
+        """
+
+        try:
+            self.con.execute(sql, params)
+            tmp_path.replace(cache_path)
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
+
+        self._prune_search_cache(protected=cache_path)
+        total = pq.ParquetFile(cache_path).metadata.num_rows
+        return cache_path, int(total), highlight_terms, False
+
+    def _fetch_page(
+        self,
+        cache_path: Path,
+        *,
+        limit: int,
+        offset: int,
+    ) -> pd.DataFrame:
+        """Fetch one page without rescanning speech_text across the corpus."""
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+
+        hits = self.con.execute(
+            f"""
+            SELECT speech_id, congress, result_rank
+            FROM read_parquet({self._quote_path(cache_path)})
+            ORDER BY result_rank
+            LIMIT ? OFFSET ?
+            """,
+            [int(limit), int(offset)],
+        ).df()
+
+        if hits.empty:
+            return pd.DataFrame(columns=RESULT_COLUMNS)
+
+        congresses = sorted(
+            {int(value) for value in hits["congress"].dropna().tolist()}
+        )
+
+        source_files: list[Path] = []
+        for congress in congresses:
+            path = self.processed_dir / f"congress_{congress:03d}.parquet"
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"Missing source Parquet needed for cached result: {path}"
+                )
+            source_files.append(path)
+
+        file_list_sql = ", ".join(
+            self._quote_path(path) for path in source_files
+        )
+
+        self.con.register("_page_hits", hits)
+
+        try:
+            column_sql = ",\n                ".join(
+                f"s.{column}" for column in RESULT_COLUMNS
+            )
+
+            page = self.con.execute(
+                f"""
+                SELECT
+                    {column_sql}
+                FROM read_parquet(
+                    [{file_list_sql}],
+                    union_by_name=true
+                ) AS s
+                INNER JOIN _page_hits AS h
+                    ON s.speech_id = h.speech_id
+                ORDER BY h.result_rank
+                """
+            ).df()
+        finally:
+            try:
+                self.con.unregister("_page_hits")
+            except Exception:
+                pass
+
+        return page
 
     def search(
         self,
         sf: SearchFilter,
     ) -> tuple[pd.DataFrame, int, list[str]]:
         """
-        Execute one search and return:
+        Search with transparent literal semantics and cached pagination.
 
-            (page_dataframe, total_matching_speeches, highlight_terms)
-
-        COUNT(*) OVER() allows the normal case to obtain the result page and
-        total count in one query rather than scanning the corpus twice.
+        First request for a query/filter combination scans the corpus and writes
+        a compact result cache. Later pages reuse that cache.
         """
-        if not self._ensure_view():
+        if not self.get_parquet_files():
             return pd.DataFrame(columns=RESULT_COLUMNS), 0, []
 
-        if sf.limit <= 0:
-            raise ValueError("SearchFilter.limit must be greater than zero")
-        if sf.offset < 0:
-            raise ValueError("SearchFilter.offset cannot be negative")
+        cache_path, total, highlight_terms, _ = self._materialize_search(sf)
 
-        where_clause, params, highlight_terms = self._build_where_clause(sf)
-        order_clause = self._order_clause(sf.sort_by)
+        if total == 0:
+            return pd.DataFrame(columns=RESULT_COLUMNS), 0, highlight_terms
 
-        column_sql = ",\n                ".join(RESULT_COLUMNS)
+        page = self._fetch_page(
+            cache_path,
+            limit=sf.limit,
+            offset=sf.offset,
+        )
 
-        sql = f"""
-            SELECT
-                {column_sql},
-                COUNT(*) OVER () AS _total_matches
-            FROM speeches
-            {where_clause}
-            {order_clause}
-            LIMIT ? OFFSET ?
-        """
-
-        query_params = [*params, int(sf.limit), int(sf.offset)]
-        df = self.con.execute(sql, query_params).df()
-
-        if not df.empty:
-            total_count = int(df["_total_matches"].iloc[0])
-            df = df.drop(columns=["_total_matches"])
-            return df, total_count, highlight_terms
-
-        # If an old pagination offset is now past the end after filters/query
-        # changed, we still need the true match count so the UI can recover.
-        if sf.offset > 0:
-            count_sql = f"""
-                SELECT COUNT(*)
-                FROM speeches
-                {where_clause}
-            """
-            total_count = int(self.con.execute(count_sql, params).fetchone()[0])
-            return pd.DataFrame(columns=RESULT_COLUMNS), total_count, highlight_terms
-
-        return pd.DataFrame(columns=RESULT_COLUMNS), 0, highlight_terms
-
-    def get_aggregations(self, sf: SearchFilter) -> dict[str, pd.DataFrame]:
-        """
-        Return optional secondary summaries for the current search.
-
-        These count matching speeches, NOT keyword occurrences.
-        """
-        if not self._ensure_view():
-            return {
-                "by_year": pd.DataFrame(columns=["year", "count"]),
-                "by_party": pd.DataFrame(columns=["party_label", "count"]),
-                "by_chamber": pd.DataFrame(columns=["chamber_label", "count"]),
-            }
-
-        where_clause, params, _ = self._build_where_clause(sf)
-
-        by_year = self.con.execute(
-            f"""
-            SELECT year, COUNT(*) AS count
-            FROM speeches
-            {where_clause}
-            GROUP BY year
-            ORDER BY year
-            """,
-            params,
-        ).df()
-
-        by_party = self.con.execute(
-            f"""
-            SELECT
-                CASE
-                    WHEN party = 'R' THEN 'Republican'
-                    WHEN party = 'D' THEN 'Democrat'
-                    WHEN party IS NULL OR party = '' THEN 'Unknown/Procedural'
-                    ELSE 'Other (' || party || ')'
-                END AS party_label,
-                COUNT(*) AS count
-            FROM speeches
-            {where_clause}
-            GROUP BY 1
-            ORDER BY count DESC
-            """,
-            params,
-        ).df()
-
-        by_chamber = self.con.execute(
-            f"""
-            SELECT
-                CASE
-                    WHEN upper(chamber) = 'S' THEN 'Senate'
-                    WHEN upper(chamber) = 'H' THEN 'House'
-                    ELSE 'Other/Unknown'
-                END AS chamber_label,
-                COUNT(*) AS count
-            FROM speeches
-            {where_clause}
-            GROUP BY 1
-            ORDER BY count DESC
-            """,
-            params,
-        ).df()
-
-        return {
-            "by_year": by_year,
-            "by_party": by_party,
-            "by_chamber": by_chamber,
-        }
+        return page, total, highlight_terms
 
     def get_filter_options(self) -> dict[str, list[Any]]:
-        """
-        Return values useful for building researcher-facing filters.
-
-        This is not required by the current app.py, but gives the next UI pass
-        a way to avoid hard-coded states, parties, and Congress numbers.
-        """
         if not self._ensure_view():
             return {
                 "congresses": [],
@@ -500,15 +613,25 @@ class SearchEngine:
             ),
             "chambers": one_column(
                 "SELECT DISTINCT chamber FROM speeches "
-                "WHERE chamber IS NOT NULL AND chamber <> '' ORDER BY chamber"
+                "WHERE chamber IS NOT NULL AND chamber <> '' "
+                "ORDER BY chamber"
             ),
             "parties": one_column(
                 "SELECT DISTINCT party FROM speeches "
-                "WHERE party IS NOT NULL AND party <> '' ORDER BY party"
+                "WHERE party IS NOT NULL AND party <> '' "
+                "ORDER BY party"
             ),
             "states": one_column(
-                "SELECT DISTINCT state FROM speeches "
-                "WHERE state IS NOT NULL AND state <> '' ORDER BY state"
+                """
+                SELECT DISTINCT upper(trim(state)) AS state
+                FROM speeches
+                WHERE state IS NOT NULL
+                  AND regexp_matches(
+                      upper(trim(state)),
+                      '^[A-Z]{2}$'
+                  )
+                ORDER BY state
+                """
             ),
         }
 
@@ -519,13 +642,6 @@ class SearchEngine:
         window_chars: int = 180,
         max_snippets: int = 2,
     ) -> str:
-        """
-        Return HTML-safe KWIC context with literal query terms highlighted.
-
-        Historical source text is escaped before HTML markup is inserted, so
-        characters such as <, > and & in the Congressional Record cannot be
-        interpreted as HTML by Streamlit.
-        """
         if not text:
             return ""
 
@@ -565,8 +681,10 @@ class SearchEngine:
             start = max(0, match.start() - window_chars)
             end = min(len(text), match.end() + window_chars)
 
-            # Merge/skip strongly overlapping regions.
-            overlaps = any(start <= old_end and end >= old_start for old_start, old_end in regions)
+            overlaps = any(
+                start <= old_end and end >= old_start
+                for old_start, old_end in regions
+            )
             if overlaps:
                 continue
 

@@ -1,13 +1,50 @@
-.venv/
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.python-version
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# macOS
 .DS_Store
 
-# Large research data
-data/*.zip
-data/processed/
-data/corpus/
+# IDE / editor
+.vscode/
+.idea/
 
-# Temporary files
-*.tmp
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Project data
+data/
+
+# DuckDB / local databases
+*.duckdb
+*.duckdb.wal
+
+# Parquet corpus / derived files
+*.parquet
+
+# Raw Stanford archives
+*.zip
+
+# Logs / temporary files
 *.log
+*.tmp
+
+# Testing / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Streamlit local config/secrets
+.streamlit/secrets.toml

@@ -146,16 +146,34 @@ def highlight_full_text(text: str, terms: list[str]) -> str:
     return "".join(rendered)
 
 
-# Do not cache SearchEngine: it owns a DuckDB connection, and Streamlit reruns
-# (for example pagination) should get a fresh connection.
-engine = SearchEngine()
+@st.cache_data(show_spinner=False)
+def load_corpus_metadata():
+    """Cache corpus-wide stats/filter options across Streamlit reruns."""
+    metadata_engine = SearchEngine()
+    try:
+        return (
+            metadata_engine.get_corpus_stats(),
+            metadata_engine.get_filter_options(),
+        )
+    finally:
+        metadata_engine.close()
 
-stats = engine.get_corpus_stats()
-options = engine.get_filter_options()
+
+with st.spinner("Preparing Congressional Record corpus…"):
+    try:
+        stats, options = load_corpus_metadata()
+        # SearchEngine owns a DuckDB connection. Use a fresh connection per
+        # rerun; search-result IDs themselves are cached on disk.
+        engine = SearchEngine()
+    except Exception as exc:
+        st.error("Could not prepare the Congressional Record corpus.")
+        st.exception(exc)
+        st.stop()
 
 if not stats["total_congresses"]:
     st.error(
-        "No Congressional Record Parquet corpus was found in `data/processed/`."
+        "No Congressional Record Parquet corpus is available locally or from "
+        "the configured Hugging Face dataset revision."
     )
     st.stop()
 

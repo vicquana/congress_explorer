@@ -1,0 +1,673 @@
+{
+  "dataset": "yeeder/congressional-record-parquet",
+  "format": "parquet",
+  "file_count": 72,
+  "congress_min": 43,
+  "congress_max": 114,
+  "year_min": 1873,
+  "year_max": 2016,
+  "total_rows": 17782222,
+  "total_size_bytes": 3723419402,
+  "source": {
+    "title": "Congressional Record for the 43rd-114th Congresses: Parsed Speeches and Phrase Counts",
+    "authors": [
+      "Matthew Gentzkow",
+      "Jesse M. Shapiro",
+      "Matt Taddy"
+    ],
+    "publisher": "Stanford Libraries",
+    "year": 2018,
+    "url": "https://data.stanford.edu/congress_text",
+    "license": "ODC-BY-1.0"
+  },
+  "files": [
+    {
+      "congress": 43,
+      "path": "data/congress_043.parquet",
+      "rows": 119302,
+      "size_bytes": 24170352,
+      "year_min": 1873,
+      "year_max": 1875,
+      "row_groups": 1
+    },
+    {
+      "congress": 44,
+      "path": "data/congress_044.parquet",
+      "rows": 114780,
+      "size_bytes": 21951688,
+      "year_min": 1875,
+      "year_max": 1877,
+      "row_groups": 1
+    },
+    {
+      "congress": 45,
+      "path": "data/congress_045.parquet",
+      "rows": 134785,
+      "size_bytes": 21198115,
+      "year_min": 1877,
+      "year_max": 1879,
+      "row_groups": 1
+    },
+    {
+      "congress": 46,
+      "path": "data/congress_046.parquet",
+      "rows": 174568,
+      "size_bytes": 25743213,
+      "year_min": 1879,
+      "year_max": 1881,
+      "row_groups": 1
+    },
+    {
+      "congress": 47,
+      "path": "data/congress_047.parquet",
+      "rows": 205609,
+      "size_bytes": 31044567,
+      "year_min": 1881,
+      "year_max": 1883,
+      "row_groups": 1
+    },
+    {
+      "congress": 48,
+      "path": "data/congress_048.parquet",
+      "rows": 140365,
+      "size_bytes": 21036960,
+      "year_min": 1883,
+      "year_max": 1885,
+      "row_groups": 1
+    },
+    {
+      "congress": 49,
+      "path": "data/congress_049.parquet",
+      "rows": 162083,
+      "size_bytes": 25146991,
+      "year_min": 1885,
+      "year_max": 1887,
+      "row_groups": 1
+    },
+    {
+      "congress": 50,
+      "path": "data/congress_050.parquet",
+      "rows": 187283,
+      "size_bytes": 27063642,
+      "year_min": 1887,
+      "year_max": 1889,
+      "row_groups": 1
+    },
+    {
+      "congress": 51,
+      "path": "data/congress_051.parquet",
+      "rows": 232698,
+      "size_bytes": 34359242,
+      "year_min": 1889,
+      "year_max": 1891,
+      "row_groups": 1
+    },
+    {
+      "congress": 52,
+      "path": "data/congress_052.parquet",
+      "rows": 154496,
+      "size_bytes": 20580570,
+      "year_min": 1891,
+      "year_max": 1893,
+      "row_groups": 1
+    },
+    {
+      "congress": 53,
+      "path": "data/congress_053.parquet",
+      "rows": 228407,
+      "size_bytes": 34302828,
+      "year_min": 1893,
+      "year_max": 1895,
+      "row_groups": 1
+    },
+    {
+      "congress": 54,
+      "path": "data/congress_054.parquet",
+      "rows": 149453,
+      "size_bytes": 20973330,
+      "year_min": 1895,
+      "year_max": 1897,
+      "row_groups": 1
+    },
+    {
+      "congress": 55,
+      "path": "data/congress_055.parquet",
+      "rows": 195024,
+      "size_bytes": 27594811,
+      "year_min": 1897,
+      "year_max": 1899,
+      "row_groups": 1
+    },
+    {
+      "congress": 56,
+      "path": "data/congress_056.parquet",
+      "rows": 155754,
+      "size_bytes": 22310855,
+      "year_min": 1899,
+      "year_max": 1901,
+      "row_groups": 1
+    },
+    {
+      "congress": 57,
+      "path": "data/congress_057.parquet",
+      "rows": 134113,
+      "size_bytes": 20439756,
+      "year_min": 1901,
+      "year_max": 1903,
+      "row_groups": 1
+    },
+    {
+      "congress": 58,
+      "path": "data/congress_058.parquet",
+      "rows": 124478,
+      "size_bytes": 17668920,
+      "year_min": 1903,
+      "year_max": 1905,
+      "row_groups": 1
+    },
+    {
+      "congress": 59,
+      "path": "data/congress_059.parquet",
+      "rows": 184897,
+      "size_bytes": 24982417,
+      "year_min": 1905,
+      "year_max": 1907,
+      "row_groups": 1
+    },
+    {
+      "congress": 60,
+      "path": "data/congress_060.parquet",
+      "rows": 155293,
+      "size_bytes": 19301788,
+      "year_min": 1907,
+      "year_max": 1909,
+      "row_groups": 1
+    },
+    {
+      "congress": 61,
+      "path": "data/congress_061.parquet",
+      "rows": 279720,
+      "size_bytes": 34635335,
+      "year_min": 1909,
+      "year_max": 1911,
+      "row_groups": 1
+    },
+    {
+      "congress": 62,
+      "path": "data/congress_062.parquet",
+      "rows": 340160,
+      "size_bytes": 41346999,
+      "year_min": 1911,
+      "year_max": 1913,
+      "row_groups": 1
+    },
+    {
+      "congress": 63,
+      "path": "data/congress_063.parquet",
+      "rows": 465818,
+      "size_bytes": 59612198,
+      "year_min": 1913,
+      "year_max": 1915,
+      "row_groups": 1
+    },
+    {
+      "congress": 64,
+      "path": "data/congress_064.parquet",
+      "rows": 311591,
+      "size_bytes": 39248299,
+      "year_min": 1915,
+      "year_max": 1917,
+      "row_groups": 1
+    },
+    {
+      "congress": 65,
+      "path": "data/congress_065.parquet",
+      "rows": 419213,
+      "size_bytes": 53339836,
+      "year_min": 1917,
+      "year_max": 1919,
+      "row_groups": 1
+    },
+    {
+      "congress": 66,
+      "path": "data/congress_066.parquet",
+      "rows": 350080,
+      "size_bytes": 46083047,
+      "year_min": 1919,
+      "year_max": 1921,
+      "row_groups": 1
+    },
+    {
+      "congress": 67,
+      "path": "data/congress_067.parquet",
+      "rows": 416511,
+      "size_bytes": 56851350,
+      "year_min": 1921,
+      "year_max": 1923,
+      "row_groups": 1
+    },
+    {
+      "congress": 68,
+      "path": "data/congress_068.parquet",
+      "rows": 222149,
+      "size_bytes": 30589805,
+      "year_min": 1923,
+      "year_max": 1925,
+      "row_groups": 1
+    },
+    {
+      "congress": 69,
+      "path": "data/congress_069.parquet",
+      "rows": 247037,
+      "size_bytes": 30076666,
+      "year_min": 1925,
+      "year_max": 1927,
+      "row_groups": 1
+    },
+    {
+      "congress": 70,
+      "path": "data/congress_070.parquet",
+      "rows": 191221,
+      "size_bytes": 23147768,
+      "year_min": 1927,
+      "year_max": 1929,
+      "row_groups": 1
+    },
+    {
+      "congress": 71,
+      "path": "data/congress_071.parquet",
+      "rows": 321499,
+      "size_bytes": 38647432,
+      "year_min": 1929,
+      "year_max": 1931,
+      "row_groups": 1
+    },
+    {
+      "congress": 72,
+      "path": "data/congress_072.parquet",
+      "rows": 237071,
+      "size_bytes": 32517995,
+      "year_min": 1931,
+      "year_max": 1933,
+      "row_groups": 1
+    },
+    {
+      "congress": 73,
+      "path": "data/congress_073.parquet",
+      "rows": 195779,
+      "size_bytes": 28147233,
+      "year_min": 1933,
+      "year_max": 1934,
+      "row_groups": 1
+    },
+    {
+      "congress": 74,
+      "path": "data/congress_074.parquet",
+      "rows": 247172,
+      "size_bytes": 35613429,
+      "year_min": 1935,
+      "year_max": 1936,
+      "row_groups": 1
+    },
+    {
+      "congress": 75,
+      "path": "data/congress_075.parquet",
+      "rows": 253399,
+      "size_bytes": 32380302,
+      "year_min": 1937,
+      "year_max": 1938,
+      "row_groups": 1
+    },
+    {
+      "congress": 76,
+      "path": "data/congress_076.parquet",
+      "rows": 302060,
+      "size_bytes": 40505010,
+      "year_min": 1939,
+      "year_max": 1941,
+      "row_groups": 1
+    },
+    {
+      "congress": 77,
+      "path": "data/congress_077.parquet",
+      "rows": 254565,
+      "size_bytes": 36893791,
+      "year_min": 1941,
+      "year_max": 1942,
+      "row_groups": 26
+    },
+    {
+      "congress": 78,
+      "path": "data/congress_078.parquet",
+      "rows": 261809,
+      "size_bytes": 38101598,
+      "year_min": 1943,
+      "year_max": 1944,
+      "row_groups": 27
+    },
+    {
+      "congress": 79,
+      "path": "data/congress_079.parquet",
+      "rows": 267405,
+      "size_bytes": 42758125,
+      "year_min": 1945,
+      "year_max": 1946,
+      "row_groups": 27
+    },
+    {
+      "congress": 80,
+      "path": "data/congress_080.parquet",
+      "rows": 222004,
+      "size_bytes": 37994916,
+      "year_min": 1947,
+      "year_max": 1948,
+      "row_groups": 23
+    },
+    {
+      "congress": 81,
+      "path": "data/congress_081.parquet",
+      "rows": 351004,
+      "size_bytes": 53255879,
+      "year_min": 1949,
+      "year_max": 1951,
+      "row_groups": 36
+    },
+    {
+      "congress": 82,
+      "path": "data/congress_082.parquet",
+      "rows": 261703,
+      "size_bytes": 39482984,
+      "year_min": 1951,
+      "year_max": 1952,
+      "row_groups": 27
+    },
+    {
+      "congress": 83,
+      "path": "data/congress_083.parquet",
+      "rows": 278772,
+      "size_bytes": 51357417,
+      "year_min": 1953,
+      "year_max": 1954,
+      "row_groups": 28
+    },
+    {
+      "congress": 84,
+      "path": "data/congress_084.parquet",
+      "rows": 236427,
+      "size_bytes": 51766327,
+      "year_min": 1955,
+      "year_max": 1956,
+      "row_groups": 24
+    },
+    {
+      "congress": 85,
+      "path": "data/congress_085.parquet",
+      "rows": 293885,
+      "size_bytes": 65503053,
+      "year_min": 1957,
+      "year_max": 1958,
+      "row_groups": 30
+    },
+    {
+      "congress": 86,
+      "path": "data/congress_086.parquet",
+      "rows": 299990,
+      "size_bytes": 68140062,
+      "year_min": 1959,
+      "year_max": 1960,
+      "row_groups": 30
+    },
+    {
+      "congress": 87,
+      "path": "data/congress_087.parquet",
+      "rows": 305270,
+      "size_bytes": 72512375,
+      "year_min": 1961,
+      "year_max": 1962,
+      "row_groups": 31
+    },
+    {
+      "congress": 88,
+      "path": "data/congress_088.parquet",
+      "rows": 300155,
+      "size_bytes": 75231733,
+      "year_min": 1963,
+      "year_max": 1964,
+      "row_groups": 31
+    },
+    {
+      "congress": 89,
+      "path": "data/congress_089.parquet",
+      "rows": 316492,
+      "size_bytes": 83357323,
+      "year_min": 1965,
+      "year_max": 1966,
+      "row_groups": 32
+    },
+    {
+      "congress": 90,
+      "path": "data/congress_090.parquet",
+      "rows": 333664,
+      "size_bytes": 84344162,
+      "year_min": 1967,
+      "year_max": 1968,
+      "row_groups": 34
+    },
+    {
+      "congress": 91,
+      "path": "data/congress_091.parquet",
+      "rows": 339920,
+      "size_bytes": 93789024,
+      "year_min": 1969,
+      "year_max": 1971,
+      "row_groups": 34
+    },
+    {
+      "congress": 92,
+      "path": "data/congress_092.parquet",
+      "rows": 321256,
+      "size_bytes": 88508454,
+      "year_min": 1971,
+      "year_max": 1972,
+      "row_groups": 33
+    },
+    {
+      "congress": 93,
+      "path": "data/congress_093.parquet",
+      "rows": 357296,
+      "size_bytes": 94035766,
+      "year_min": 1973,
+      "year_max": 1974,
+      "row_groups": 36
+    },
+    {
+      "congress": 94,
+      "path": "data/congress_094.parquet",
+      "rows": 382529,
+      "size_bytes": 91205110,
+      "year_min": 1975,
+      "year_max": 1976,
+      "row_groups": 39
+    },
+    {
+      "congress": 95,
+      "path": "data/congress_095.parquet",
+      "rows": 409415,
+      "size_bytes": 92606577,
+      "year_min": 1977,
+      "year_max": 1978,
+      "row_groups": 41
+    },
+    {
+      "congress": 96,
+      "path": "data/congress_096.parquet",
+      "rows": 353007,
+      "size_bytes": 87142616,
+      "year_min": 1979,
+      "year_max": 1980,
+      "row_groups": 36
+    },
+    {
+      "congress": 97,
+      "path": "data/congress_097.parquet",
+      "rows": 283414,
+      "size_bytes": 76814687,
+      "year_min": 1981,
+      "year_max": 1982,
+      "row_groups": 1
+    },
+    {
+      "congress": 98,
+      "path": "data/congress_098.parquet",
+      "rows": 281793,
+      "size_bytes": 78271853,
+      "year_min": 1983,
+      "year_max": 1984,
+      "row_groups": 1
+    },
+    {
+      "congress": 99,
+      "path": "data/congress_099.parquet",
+      "rows": 286731,
+      "size_bytes": 84347565,
+      "year_min": 1985,
+      "year_max": 1986,
+      "row_groups": 1
+    },
+    {
+      "congress": 100,
+      "path": "data/congress_100.parquet",
+      "rows": 274649,
+      "size_bytes": 83022720,
+      "year_min": 1987,
+      "year_max": 1988,
+      "row_groups": 1
+    },
+    {
+      "congress": 101,
+      "path": "data/congress_101.parquet",
+      "rows": 250363,
+      "size_bytes": 80554325,
+      "year_min": 1989,
+      "year_max": 1990,
+      "row_groups": 1
+    },
+    {
+      "congress": 102,
+      "path": "data/congress_102.parquet",
+      "rows": 239303,
+      "size_bytes": 83586399,
+      "year_min": 1991,
+      "year_max": 1992,
+      "row_groups": 1
+    },
+    {
+      "congress": 103,
+      "path": "data/congress_103.parquet",
+      "rows": 235325,
+      "size_bytes": 79319534,
+      "year_min": 1993,
+      "year_max": 1994,
+      "row_groups": 1
+    },
+    {
+      "congress": 104,
+      "path": "data/congress_104.parquet",
+      "rows": 274732,
+      "size_bytes": 90205528,
+      "year_min": 1995,
+      "year_max": 1996,
+      "row_groups": 1
+    },
+    {
+      "congress": 105,
+      "path": "data/congress_105.parquet",
+      "rows": 209479,
+      "size_bytes": 76027457,
+      "year_min": 1997,
+      "year_max": 1998,
+      "row_groups": 1
+    },
+    {
+      "congress": 106,
+      "path": "data/congress_106.parquet",
+      "rows": 208086,
+      "size_bytes": 77798841,
+      "year_min": 1999,
+      "year_max": 2000,
+      "row_groups": 1
+    },
+    {
+      "congress": 107,
+      "path": "data/congress_107.parquet",
+      "rows": 178667,
+      "size_bytes": 67398980,
+      "year_min": 2001,
+      "year_max": 2002,
+      "row_groups": 1
+    },
+    {
+      "congress": 108,
+      "path": "data/congress_108.parquet",
+      "rows": 194544,
+      "size_bytes": 72893755,
+      "year_min": 2003,
+      "year_max": 2004,
+      "row_groups": 1
+    },
+    {
+      "congress": 109,
+      "path": "data/congress_109.parquet",
+      "rows": 186708,
+      "size_bytes": 70333548,
+      "year_min": 2005,
+      "year_max": 2006,
+      "row_groups": 1
+    },
+    {
+      "congress": 110,
+      "path": "data/congress_110.parquet",
+      "rows": 212386,
+      "size_bytes": 76945155,
+      "year_min": 2007,
+      "year_max": 2009,
+      "row_groups": 1
+    },
+    {
+      "congress": 111,
+      "path": "data/congress_111.parquet",
+      "rows": 179268,
+      "size_bytes": 67050448,
+      "year_min": 2009,
+      "year_max": 2010,
+      "row_groups": 1
+    },
+    {
+      "congress": 112,
+      "path": "data/congress_112.parquet",
+      "rows": 145900,
+      "size_bytes": 56406875,
+      "year_min": 2011,
+      "year_max": 2013,
+      "row_groups": 1
+    },
+    {
+      "congress": 113,
+      "path": "data/congress_113.parquet",
+      "rows": 128148,
+      "size_bytes": 49722367,
+      "year_min": 2013,
+      "year_max": 2014,
+      "row_groups": 1
+    },
+    {
+      "congress": 114,
+      "path": "data/congress_114.parquet",
+      "rows": 112290,
+      "size_bytes": 42119324,
+      "year_min": 2015,
+      "year_max": 2016,
+      "row_groups": 1
+    }
+  ]
+}
