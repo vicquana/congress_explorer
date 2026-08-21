@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import html
+import json
 import re
 import sys
 
@@ -21,7 +22,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.search_engine import SearchEngine, SearchFilter
+from app.search_engine import DEFAULT_CSV_EXPORT_MAX_ROWS, SearchEngine, SearchFilter
+
+CSV_EXPORT_MAX_ROWS = DEFAULT_CSV_EXPORT_MAX_ROWS
 
 st.set_page_config(
     page_title="Congressional Record Explorer",
@@ -395,7 +398,11 @@ sf = SearchFilter(
 )
 
 with st.spinner("Searching Congressional Record…"):
-    results, total, highlight_terms = engine.search(sf)
+    try:
+        results, total, highlight_terms = engine.search(sf)
+    except Exception as exc:
+        st.error(f"That search could not be completed: {exc}")
+        st.stop()
 
 if results.empty and total > 0 and st.session_state.page_num > 1:
     st.session_state.page_num = 1
@@ -414,6 +421,42 @@ st.caption(
     f"Page {st.session_state.page_num:,} of {total_pages:,} · "
     f"showing up to {PAGE_SIZE} speeches"
 )
+
+search_signature = json.dumps(active, sort_keys=True)
+
+with st.expander("Export search results to CSV"):
+    st.caption(
+        f"Exports all matching speeches, up to {CSV_EXPORT_MAX_ROWS:,} rows, "
+        "in the current sort order."
+    )
+    if st.button("Prepare CSV export"):
+        with st.spinner("Preparing CSV export…"):
+            try:
+                csv_bytes, exported_rows, total_matches = engine.export_csv(sf)
+            except Exception as exc:
+                st.error(f"Could not prepare the CSV export: {exc}")
+            else:
+                st.session_state.csv_export = {
+                    "bytes": csv_bytes,
+                    "exported_rows": exported_rows,
+                    "total_matches": total_matches,
+                    "search_signature": search_signature,
+                }
+
+    export = st.session_state.get("csv_export")
+    if export and export["search_signature"] == search_signature:
+        if export["exported_rows"] < export["total_matches"]:
+            st.warning(
+                f"Export capped at the first {export['exported_rows']:,} of "
+                f"{export['total_matches']:,} matching speeches for this sort "
+                "order. Narrow the filters to export the rest."
+            )
+        st.download_button(
+            "Download CSV",
+            data=export["bytes"],
+            file_name="congressional_record_search.csv",
+            mime="text/csv",
+        )
 
 for _, row in results.iterrows():
     speaker = display_speaker(row)

@@ -30,6 +30,14 @@ from app.data_loader import resolve_processed_dir
 CORPUS_START = 43
 CORPUS_END = 114
 
+# DuckDB's regexp_matches() compiles patterns with RE2, which guarantees
+# linear-time matching and has no catastrophic-backtracking (ReDoS) failure
+# mode. The length cap below is defense-in-depth against pathologically large
+# patterns (compile time/memory), not a ReDoS mitigation by itself.
+MAX_REGEX_PATTERN_LENGTH = 200
+
+DEFAULT_CSV_EXPORT_MAX_ROWS = int(os.getenv("CONGRESS_CSV_EXPORT_MAX_ROWS", "50000"))
+
 RESULT_COLUMNS = [
     "speech_id",
     "congress",
@@ -225,6 +233,23 @@ class SearchEngine:
     def _split_terms(query: str) -> list[str]:
         return [term for term in re.split(r"\s+", query.strip()) if term]
 
+    def _validate_regex(self, pattern: str) -> None:
+        """
+        Reject regex patterns that are too long or fail to compile under RE2.
+
+        Raises ValueError with a message safe to show directly to end users.
+        """
+        if len(pattern) > MAX_REGEX_PATTERN_LENGTH:
+            raise ValueError(
+                f"Regex pattern is too long (max {MAX_REGEX_PATTERN_LENGTH} "
+                "characters)."
+            )
+
+        try:
+            self.con.execute("SELECT regexp_matches('', ?)", [pattern])
+        except duckdb.Error as exc:
+            raise ValueError(f"Invalid regular expression: {exc}") from exc
+
     def _build_where_clause(
         self,
         sf: SearchFilter,
@@ -255,6 +280,7 @@ class SearchEngine:
                     highlight_terms.extend(terms)
 
             elif sf.search_mode == "regex":
+                self._validate_regex(query)
                 conditions.append(
                     "regexp_matches(coalesce(speech_text, ''), ?, 'i')"
                 )
@@ -589,6 +615,43 @@ class SearchEngine:
         )
 
         return page, total, highlight_terms
+
+    def export_csv(
+        self,
+        sf: SearchFilter,
+        max_rows: int = DEFAULT_CSV_EXPORT_MAX_ROWS,
+    ) -> tuple[bytes, int, int]:
+        """
+        Export matching speeches for a search as CSV bytes.
+
+        Reuses the same materialized result cache as ``search()``, so this
+        does not rescan the corpus if the user already ran the search. The
+        export is capped at ``max_rows`` (highest-ranked rows for the
+        search's current sort order) to bound memory on small hosts.
+
+        Returns (csv_bytes, exported_rows, total_matches).
+        """
+        if max_rows <= 0:
+            raise ValueError("max_rows must be greater than zero")
+
+        if not self.get_parquet_files():
+            return (
+                pd.DataFrame(columns=RESULT_COLUMNS).to_csv(index=False).encode("utf-8"),
+                0,
+                0,
+            )
+
+        cache_path, total, _highlight_terms, _cache_hit = self._materialize_search(sf)
+
+        if total == 0:
+            empty_csv = pd.DataFrame(columns=RESULT_COLUMNS).to_csv(index=False)
+            return empty_csv.encode("utf-8"), 0, 0
+
+        export_limit = min(total, max_rows)
+        rows = self._fetch_page(cache_path, limit=export_limit, offset=0)
+        csv_bytes = rows.to_csv(index=False).encode("utf-8")
+
+        return csv_bytes, len(rows), total
 
     def get_filter_options(self) -> dict[str, list[Any]]:
         if not self._ensure_view():
