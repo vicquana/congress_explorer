@@ -23,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.search_engine import DEFAULT_CSV_EXPORT_MAX_ROWS, SearchEngine, SearchFilter
+from app.semantic_search import SemanticSearchEngine
 
 CSV_EXPORT_MAX_ROWS = DEFAULT_CSV_EXPORT_MAX_ROWS
 
@@ -38,6 +39,7 @@ SEARCH_MODE_LABELS = {
     "Exact phrase": "exact_phrase",
     "Contains all terms": "all_words",
     "Contains any term": "any_word",
+    "Near (proximity)": "near",
 }
 
 PARTY_LABELS = {
@@ -149,6 +151,135 @@ def highlight_full_text(text: str, terms: list[str]) -> str:
     return "".join(rendered)
 
 
+def list_available_semantic_pilots() -> list[int]:
+    """Congresses that have a pre-built sentence embedding index on disk."""
+    base = PROJECT_ROOT / "data" / "embeddings"
+    if not base.exists():
+        return []
+
+    pilots = []
+    for path in sorted(base.glob("pilot_*")):
+        match = re.fullmatch(r"pilot_(\d{3})", path.name)
+        if match and SemanticSearchEngine.index_exists(path):
+            pilots.append(int(match.group(1)))
+    return pilots
+
+
+@st.cache_resource(show_spinner=False)
+def get_semantic_engine(congress: int) -> SemanticSearchEngine:
+    """Cached across reruns so the model/embeddings load only once."""
+    return SemanticSearchEngine(congress=congress)
+
+
+def render_semantic_search_section() -> None:
+    st.subheader("🧪 Experimental: Semantic sentence search (pilot)")
+    st.caption(
+        "Prototype, not yet validated research infrastructure. Type a "
+        "sentence or short paragraph describing what you're looking for. "
+        "Results are individual sentences ranked by embedding similarity, "
+        "not literal keyword matches, and are scoped to a single pilot "
+        "Congress rather than the full corpus."
+    )
+
+    pilots = list_available_semantic_pilots()
+    if not pilots:
+        st.info(
+            "No sentence embedding index has been built yet. Build one "
+            "with:\n\n"
+            "`uv run python scripts/build_sentence_embeddings.py "
+            "--congress 77`"
+        )
+        return
+
+    pilot_congress = st.selectbox(
+        "Pilot Congress",
+        pilots,
+        format_func=format_congress,
+        key="semantic_pilot_congress",
+    )
+
+    query_text = st.text_area(
+        "Describe what you're looking for",
+        placeholder=(
+            "e.g. the government should not establish or favor one "
+            "religion over another"
+        ),
+        height=100,
+        key="semantic_query_text",
+    )
+
+    top_k = st.slider(
+        "Number of results",
+        min_value=5,
+        max_value=100,
+        value=20,
+        key="semantic_top_k",
+    )
+
+    if not st.button("Find similar sentences", type="primary"):
+        return
+
+    if not query_text.strip():
+        st.warning("Enter a sentence or paragraph to search for.")
+        return
+
+    engine = get_semantic_engine(pilot_congress)
+
+    with st.spinner("Embedding query and ranking sentences…"):
+        try:
+            result = engine.search(query_text, top_k=top_k)
+        except Exception as exc:
+            st.error(f"Semantic search failed: {exc}")
+            return
+
+    st.caption(
+        f"Model: `{result.model}` · {result.sentence_count:,} indexed "
+        f"sentences in {format_congress(result.congress)}"
+    )
+    st.markdown("---")
+
+    for _, row in result.results.iterrows():
+        speaker = display_speaker(row)
+        date_label = format_date(row.get("date"))
+        party = party_display(row.get("party"))
+        chamber = chamber_display(row.get("chamber"))
+        state = str(row.get("state") or "").strip()
+
+        metadata = [date_label, chamber, party]
+        if state:
+            metadata.append(state)
+
+        st.markdown(f"**similarity {row['similarity']:.3f}** · {speaker}")
+        st.caption(" · ".join(metadata))
+        st.markdown(f"> {row['sentence_text']}")
+
+        full_text = str(row.get("speech_text") or "")
+        if full_text:
+            with st.expander("Read full speech"):
+                highlighted = highlight_full_text(
+                    full_text, [row["sentence_text"]]
+                )
+                st.markdown(
+                    f"""
+<div style="
+    white-space: pre-wrap;
+    line-height: 1.65;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    padding: 1rem;
+    border: 1px solid rgba(128,128,128,0.25);
+    border-radius: 0.5rem;
+    max-height: 38rem;
+    overflow-y: auto;
+">
+{highlighted}
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("---")
+
+
 @st.cache_data(show_spinner=False)
 def load_corpus_metadata():
     """Cache corpus-wide stats/filter options across Streamlit reruns."""
@@ -256,31 +387,89 @@ Parquet corpus, rather than being hard-coded to a single research period.
 **Search semantics are intentionally transparent.** “Contains all terms” and
 “Contains any term” use literal case-insensitive substring matching. They do
 not currently perform stemming, semantic search, or linguistic tokenization.
+
+**Near (proximity)** matches two terms that occur within a chosen number of
+words of each other. Word distance is approximated by whitespace-separated
+tokens (the same untokenized approach used elsewhere in this search), not by
+stemmed or linguistically normalized word counts.
 """
     )
 
+semantic_mode = st.toggle(
+    "🧪 Try experimental semantic sentence search instead",
+    value=False,
+    key="semantic_mode_toggle",
+    help=(
+        "Search by meaning instead of literal keywords. Paste a sentence "
+        "or paragraph and get back the most similar sentences, ranked. "
+        "Scoped to a single pilot Congress; see the caption below."
+    ),
+)
+
+if semantic_mode:
+    render_semantic_search_section()
+    st.stop()
+
+mode_label = st.selectbox(
+    "Search mode",
+    list(SEARCH_MODE_LABELS),
+    index=0,
+    key="search_mode_select",
+    help=(
+        "Near (proximity) matches two terms that appear within a chosen "
+        "number of words of each other, instead of requiring an exact "
+        "phrase."
+    ),
+)
+
 with st.form("search_form"):
-    query_input = st.text_input(
-        "Search Congressional speech",
-        value=st.session_state.get("form_query", ""),
-        placeholder="Try: religious freedom, freedom of worship, Vatican, communism",
+    near_term_a = ""
+    near_term_b = ""
+    near_max_gap = 5
+    near_any_order = True
+
+    if mode_label == "Near (proximity)":
+        query_input = ""
+
+        near_col_a, near_col_b = st.columns(2)
+        with near_col_a:
+            near_term_a = st.text_input(
+                "Term A",
+                value=st.session_state.get("form_near_a", ""),
+                placeholder="e.g. freedom",
+            )
+        with near_col_b:
+            near_term_b = st.text_input(
+                "Term B",
+                value=st.session_state.get("form_near_b", ""),
+                placeholder="e.g. worship",
+            )
+
+        gap_col, order_col = st.columns(2)
+        with gap_col:
+            near_max_gap = st.slider(
+                "Max words between Term A and Term B",
+                min_value=0,
+                max_value=50,
+                value=st.session_state.get("form_near_gap", 5),
+            )
+        with order_col:
+            near_any_order = st.checkbox(
+                "Match either order (A…B or B…A)",
+                value=st.session_state.get("form_near_order", True),
+            )
+    else:
+        query_input = st.text_input(
+            "Search Congressional speech",
+            value=st.session_state.get("form_query", ""),
+            placeholder="Try: religious freedom, freedom of worship, Vatican, communism",
+        )
+
+    sort_label = st.selectbox(
+        "Sort",
+        ["Oldest first", "Newest first"],
+        index=0,
     )
-
-    control_a, control_b = st.columns(2)
-
-    with control_a:
-        mode_label = st.selectbox(
-            "Search mode",
-            list(SEARCH_MODE_LABELS),
-            index=0,
-        )
-
-    with control_b:
-        sort_label = st.selectbox(
-            "Sort",
-            ["Oldest first", "Newest first"],
-            index=0,
-        )
 
     with st.expander("Filters", expanded=True):
         filter_col1, filter_col2, filter_col3 = st.columns(3)
@@ -347,19 +536,36 @@ with st.form("search_form"):
 
 if submitted:
     st.session_state.form_query = query_input
-    st.session_state.active_search = {
-        "query": query_input.strip(),
-        "search_mode": SEARCH_MODE_LABELS[mode_label],
-        "year_min": int(years[0]),
-        "year_max": int(years[1]),
-        "congress_list": [int(c) for c in congresses] or None,
-        "chambers": [CHAMBER_LABELS[label] for label in chamber_labels] or None,
-        "parties": [PARTY_LABELS[label] for label in party_labels] or None,
-        "states": states or None,
-        "speaker_query": speaker_query.strip(),
-        "sort_by": "date_asc" if sort_label == "Oldest first" else "date_desc",
-    }
-    st.session_state.page_num = 1
+    st.session_state.form_near_a = near_term_a
+    st.session_state.form_near_b = near_term_b
+    st.session_state.form_near_gap = near_max_gap
+    st.session_state.form_near_order = near_any_order
+
+    if mode_label == "Near (proximity)" and (
+        not near_term_a.strip() or not near_term_b.strip()
+    ):
+        st.session_state.pop("active_search", None)
+        st.warning(
+            "Enter both Term A and Term B for a proximity search."
+        )
+    else:
+        st.session_state.active_search = {
+            "query": query_input.strip(),
+            "search_mode": SEARCH_MODE_LABELS[mode_label],
+            "near_term_a": near_term_a.strip(),
+            "near_term_b": near_term_b.strip(),
+            "near_max_gap": int(near_max_gap),
+            "near_any_order": bool(near_any_order),
+            "year_min": int(years[0]),
+            "year_max": int(years[1]),
+            "congress_list": [int(c) for c in congresses] or None,
+            "chambers": [CHAMBER_LABELS[label] for label in chamber_labels] or None,
+            "parties": [PARTY_LABELS[label] for label in party_labels] or None,
+            "states": states or None,
+            "speaker_query": speaker_query.strip(),
+            "sort_by": "date_asc" if sort_label == "Oldest first" else "date_desc",
+        }
+        st.session_state.page_num = 1
 
 if "active_search" not in st.session_state:
     st.markdown("### Suggested starting points")
@@ -371,6 +577,7 @@ if "active_search" not in st.session_state:
 - **Contains all terms:** `religion communism`
 - **Contains any term:** `Vatican Catholic`
 - **Exact phrase:** `sectarian`
+- **Near (proximity):** `freedom` within 5 words of `worship`
 """
     )
     st.info("Enter a query and press **Search**.")
@@ -392,6 +599,10 @@ sf = SearchFilter(
     parties=active["parties"],
     states=active["states"],
     speaker_query=active["speaker_query"],
+    near_term_a=active["near_term_a"],
+    near_term_b=active["near_term_b"],
+    near_max_gap=active["near_max_gap"],
+    near_any_order=active["near_any_order"],
     limit=PAGE_SIZE,
     offset=offset,
     sort_by=active["sort_by"],

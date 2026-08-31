@@ -280,13 +280,15 @@ congress_explorer/
 │   ├── phrase_clusters/       — committed reference files
 │   ├── party_full/            — committed reference file
 │   ├── processed/             — gitignored; local Parquet corpus (optional)
-│   └── search_cache/          — gitignored; derived query-result cache
+│   ├── search_cache/          — gitignored; derived query-result cache
+│   └── embeddings/            — gitignored; pilot sentence-embedding indexes
 │
 ├── scripts/
-│   ├── archive_reader.py      — single ZIP-reading implementation
-│   ├── inspect_zip.py         — CLI preview of raw ZIP contents
-│   ├── process_corpus.py      — ZIP → Parquet pipeline
-│   └── build_manifest.py      — builds manifest.json from processed Parquet
+│   ├── archive_reader.py            — single ZIP-reading implementation
+│   ├── inspect_zip.py               — CLI preview of raw ZIP contents
+│   ├── process_corpus.py            — ZIP → Parquet pipeline
+│   ├── build_manifest.py            — builds manifest.json from processed Parquet
+│   └── build_sentence_embeddings.py — builds a pilot Congress's semantic search index
 │
 ├── experiment/
 │   └── build_search_db.py     — prototype full-text-search backend (not wired
@@ -296,6 +298,7 @@ congress_explorer/
 │   ├── __init__.py
 │   ├── data_loader.py         — resolves local vs. Hugging Face corpus
 │   ├── search_engine.py       — DuckDB query engine + result caching
+│   ├── semantic_search.py     — experimental pilot-Congress semantic search
 │   └── app.py                 — Streamlit interface
 │
 ├── .devcontainer/
@@ -367,9 +370,12 @@ The Streamlit app (`app/app.py`) and DuckDB engine (`app/search_engine.py`) prov
 Exact phrase
 Contains all terms
 Contains any term
+Near (proximity)
 ```
 
 The current implementation uses literal, case-insensitive substring matching rather than linguistic tokenization, so the UI does not imply stronger word-level semantics than the backend provides. For example, a search for `sect` may also match `sectarian` and `section`.
+
+**Near (proximity)** matches two terms that occur within a chosen number of words (0–50) of each other, in either order by default. It is implemented as a RE2 regex (`term_a (?:\s+\S+){0,N}\s+term_b`, plus the reversed order when "either order" is checked) rather than linguistic tokenization — word distance is approximated by whitespace-separated tokens, the same untokenized approach used by the other search modes.
 
 An additional `regex` search mode exists in `SearchEngine` (backed by DuckDB's RE2-based `regexp_matches`, which is not vulnerable to catastrophic-backtracking ReDoS) with pattern-length and compile-validation guards. It is not yet exposed in the Streamlit UI — see Roadmap.
 
@@ -380,6 +386,40 @@ An additional `regex` search mode exists in `SearchEngine` (backed by DuckDB's R
 **Pagination and caching:** the first request for a given query/filter combination scans the corpus once and writes matching speech IDs to a small derived Parquet cache, keyed by a hash of the filters and a corpus fingerprint (file names, sizes, mtimes). Subsequent pages of the same search reuse that cache instead of rescanning the corpus. The cache is pruned to stay under configurable size/file-count limits.
 
 **CSV export:** search results can be exported as CSV directly from the results page ("Export search results to CSV" → "Prepare CSV export" → "Download CSV"). The export reuses the same cached result set as pagination (no extra corpus scan) and includes the same columns shown in the UI (full speech text and all metadata fields). Exports are capped at `CONGRESS_CSV_EXPORT_MAX_ROWS` rows (default 50,000); when a search has more matches than the cap, the UI shows a truncation warning with the true total rather than silently dropping rows.
+
+---
+
+## Semantic Sentence Search (Experimental Pilot)
+
+**Status: prototype, not validated research infrastructure.** Scoped to a single pilot Congress at a time, not the full corpus — see Development Principle #11 and the Guiding Question.
+
+This is a second, independent search mode from the literal `SearchEngine` above. Instead of substring matching, it ranks individual *sentences* by embedding similarity to a free-text query (a phrase, sentence, or short paragraph), so a researcher can describe a theme in their own words instead of guessing the exact vocabulary a speaker used.
+
+**Building a pilot index:**
+
+```bash
+uv run python scripts/build_sentence_embeddings.py --congress 77 --limit 500 --force   # smoke test
+uv run python scripts/build_sentence_embeddings.py --congress 77 --force                # full Congress
+```
+
+`scripts/build_sentence_embeddings.py`:
+
+1. Splits every speech in the chosen Congress into sentences with `pysbd` (rule-based, no downloaded language model, so segmentation is deterministic and reproducible).
+2. Drops sentences shorter than `--min-words` (default 3) to cut down on procedural boilerplate ("Mr. Speaker.").
+3. Embeds each sentence with a local `sentence-transformers` model (default `all-MiniLM-L6-v2`, CPU, 384 dimensions, L2-normalized so cosine similarity is a plain dot product).
+4. Writes `data/embeddings/pilot_<congress>/` (`sentences.parquet`, `embeddings.npy`, `meta.json`) — a derived, rebuildable artifact, not committed to the repository (see `.gitignore`).
+
+**Querying:** `app/semantic_search.py` (`SemanticSearchEngine`) loads a pilot's `sentences.parquet` + `embeddings.npy`, embeds the query with the same model, and ranks all indexed sentences by cosine similarity (brute-force NumPy dot product — adequate at single-Congress scale; would need an ANN index such as FAISS or DuckDB's VSS extension to scale to the full 043–114 corpus). Results are joined back to the source Parquet for speaker/date/party/state metadata and the full speech text.
+
+**UI:** in the Streamlit app, toggle "🧪 Try experimental semantic sentence search instead" above the main search form. The toggle only lists Congresses that already have a built pilot index; if none exist, it shows the build command above.
+
+**Known limitations:**
+
+- Scoped to whichever Congress(es) have a pilot index built locally — not the full corpus.
+- Brute-force similarity search does not scale past roughly one Congress on a laptop CPU; a full-corpus build would need chunked/incremental embedding, an ANN index, and materially more compute/storage.
+- The full embedding matrix is loaded into RAM on first query (~2.3 GB for Congress 077's 1.5M sentences), so the first query after the app starts takes roughly 10–20s; later queries in the same running app are sub-second to a few seconds.
+- `all-MiniLM-L6-v2` is a small general-purpose sentence embedding model, not fine-tuned for historical Congressional English; ranking quality has not been formally evaluated against this corpus.
+- Sentence segmentation and the `min-words` cutoff are heuristics, not manually validated against this corpus's OCR/transcription quirks.
 
 ---
 
@@ -401,18 +441,21 @@ Analytics are secondary to source discovery and are not yet implemented. Potenti
 - DuckDB search engine with disk-cached, paginated results (`app/search_engine.py`).
 - Streamlit research interface with KWIC snippets, full-speech view, and metadata filters (`app/app.py`).
 - CSV export of full search results, capped and with a truncation warning.
+- Near (proximity) search mode: two terms within a configurable word gap, RE2-backed, exposed in the UI.
 - Regex search mode implemented with pattern-length and compile-validation hardening (RE2-backed, not exposed in the UI yet).
 - Local-vs-cloud corpus resolution with no local data required (`app/data_loader.py`).
 - Dev container provisioning via `uv sync` (Python 3.12).
+- Experimental semantic sentence search prototype (`scripts/build_sentence_embeddings.py`, `app/semantic_search.py`), scoped to a single pilot Congress — see the section above. Not validated research infrastructure.
 
 ### Not yet complete or verified
 
-- Automated tests (none currently exist for `archive_reader.py`'s offset correction, `process_corpus.py`'s join logic, or `search_engine.py`).
+- Automated tests (none currently exist for `archive_reader.py`'s offset correction, `process_corpus.py`'s join logic, `search_engine.py`, or `semantic_search.py`).
 - CI (no `.github/workflows/`).
 - Containerized / cloud-hosting configuration (no Dockerfile, `fly.toml`, etc. — the app currently relies on Streamlit Community Cloud's own `pyproject.toml` auto-detection, or manual `uv run streamlit run`).
 - Regex search mode exposed as a UI option.
 - The `date` column is a raw string, not a typed date/timestamp.
 - The `experiment/build_search_db.py` full-text-search prototype is not wired into the app.
+- Semantic sentence search does not scale past a single pilot Congress (no ANN index, no full-corpus build).
 
 ---
 
@@ -441,7 +484,8 @@ Ordered by what most reduces risk for a research tool researchers will actually 
 2. **Deployment configuration** — a Dockerfile or hosting config beyond relying on Streamlit Community Cloud auto-detection, if the app needs to run somewhere else.
 3. **Typed `date` column** instead of a raw `YYYYMMDD` string.
 4. **Decide the fate of `experiment/build_search_db.py`** — either finish it into a real full-text-search backend (stemming, tokenized ranking) and wire it into `SearchEngine`, or remove it if the direction changes.
-5. **Expose the `regex` search mode** in the Streamlit UI once there's a concrete research need for it, building toward more advanced search (fuzzy matching, stemming, eventually semantic search) — only as retrieval failures in the current substring search actually justify it, per the Guiding Question below.
+5. **Expose the `regex` search mode** in the Streamlit UI once there's a concrete research need for it.
+6. **Scale semantic sentence search beyond a single pilot Congress**, if the pilot proves useful for real research questions: an ANN index (FAISS or DuckDB VSS) instead of brute-force NumPy, chunked/incremental embedding across the full 043–114 corpus, and an evaluation of ranking quality against this corpus rather than assuming a general-purpose sentence model transfers well to historical Congressional English.
 
 None of these should be added simply because the technology is available.
 

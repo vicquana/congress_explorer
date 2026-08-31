@@ -60,6 +60,9 @@ RESULT_COLUMNS = [
 ]
 
 
+MAX_NEAR_GAP = 50
+
+
 @dataclass
 class SearchFilter:
     query: str = ""
@@ -71,6 +74,10 @@ class SearchFilter:
     parties: Optional[list[str]] = None
     states: Optional[list[str]] = None
     speaker_query: str = ""
+    near_term_a: str = ""
+    near_term_b: str = ""
+    near_max_gap: int = 5
+    near_any_order: bool = True
     limit: int = 25
     offset: int = 0
     sort_by: str = "date_asc"
@@ -233,6 +240,35 @@ class SearchEngine:
     def _split_terms(query: str) -> list[str]:
         return [term for term in re.split(r"\s+", query.strip()) if term]
 
+    @staticmethod
+    def _build_near_pattern(
+        term_a: str,
+        term_b: str,
+        max_gap: int,
+        any_order: bool,
+    ) -> str:
+        """
+        Build a RE2 pattern matching term_a and term_b within max_gap words
+        of each other (word distance is approximated by whitespace-separated
+        tokens, matching this engine's literal/untokenized search semantics).
+        """
+        if not 0 <= max_gap <= MAX_NEAR_GAP:
+            raise ValueError(
+                f"Proximity gap must be between 0 and {MAX_NEAR_GAP} words."
+            )
+
+        esc_a = re.escape(term_a)
+        esc_b = re.escape(term_b)
+        gap = rf"(?:\s+\S+){{0,{int(max_gap)}}}"
+
+        a_then_b = rf"\b{esc_a}\b{gap}\s+\b{esc_b}\b"
+
+        if not any_order:
+            return a_then_b
+
+        b_then_a = rf"\b{esc_b}\b{gap}\s+\b{esc_a}\b"
+        return f"(?:{a_then_b})|(?:{b_then_a})"
+
     def _validate_regex(self, pattern: str) -> None:
         """
         Reject regex patterns that are too long or fail to compile under RE2.
@@ -295,6 +331,21 @@ class SearchEngine:
                     )
                     params.append(term)
                 highlight_terms.extend(terms)
+
+        if sf.search_mode == "near":
+            term_a = sf.near_term_a.strip()
+            term_b = sf.near_term_b.strip()
+
+            if term_a and term_b:
+                pattern = self._build_near_pattern(
+                    term_a, term_b, sf.near_max_gap, sf.near_any_order
+                )
+                self._validate_regex(pattern)
+                conditions.append(
+                    "regexp_matches(coalesce(speech_text, ''), ?, 'i')"
+                )
+                params.append(pattern)
+                highlight_terms.extend([term_a, term_b])
 
         if sf.year_min is not None:
             conditions.append("year >= ?")
@@ -409,8 +460,12 @@ class SearchEngine:
             "parties": sorted(sf.parties or []),
             "states": sorted(sf.states or []),
             "speaker_query": sf.speaker_query.strip(),
+            "near_term_a": sf.near_term_a.strip(),
+            "near_term_b": sf.near_term_b.strip(),
+            "near_max_gap": sf.near_max_gap,
+            "near_any_order": sf.near_any_order,
             "sort_by": sf.sort_by,
-            "cache_version": 1,
+            "cache_version": 2,
         }
 
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
