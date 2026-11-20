@@ -40,7 +40,18 @@ SEARCH_MODE_LABELS = {
     "Contains all terms": "all_words",
     "Contains any term": "any_word",
     "Near (proximity)": "near",
+    "Related phrases": "related_phrases",
 }
+
+RELATED_PHRASE_GROUPS = (
+    ("religious freedom", "religious liberty", "freedom of conscience",
+     "freedom of worship", "free exercise of religion"),
+    ("separation of church and state", "establishment of religion",
+     "establishment clause", "religious establishment"),
+    ("national security", "national defense", "common defense"),
+    ("communism", "communist movement", "communist ideology", "bolshevism"),
+)
+
 
 PARTY_LABELS = {
     "Democrat": "D",
@@ -422,6 +433,33 @@ mode_label = st.selectbox(
     ),
 )
 
+related_query = ""
+if mode_label == "Related phrases":
+    seed = st.text_input(
+        "Starting phrase",
+        placeholder="Try: religious freedom",
+    ).strip()
+    normalized = " ".join(seed.casefold().split())
+    suggestions = [
+        phrase for group in RELATED_PHRASE_GROUPS if normalized in group
+        for phrase in group if phrase != normalized
+    ]
+    selected = []
+    if suggestions:
+        selected = st.multiselect(
+            "Include related phrases",
+            options=suggestions,
+            default=suggestions,
+            key=f"related_suggestions:{normalized}",
+        )
+    elif seed:
+        st.caption("No curated suggestions for this phrase. You can add your own.")
+    extra = st.text_area("Additional phrases (one per line)")
+    related_query = "\n".join(dict.fromkeys(
+        phrase.strip() for phrase in [seed, *selected, *extra.splitlines()]
+        if phrase.strip()
+    ))
+
 with st.form("search_form"):
     near_term_a = ""
     near_term_b = ""
@@ -458,6 +496,8 @@ with st.form("search_form"):
                 "Match either order (A…B or B…A)",
                 value=st.session_state.get("form_near_order", True),
             )
+    elif mode_label == "Related phrases":
+        query_input = related_query
     else:
         query_input = st.text_input(
             "Search Congressional speech",
@@ -543,7 +583,10 @@ if submitted:
     st.session_state.form_near_gap = near_max_gap
     st.session_state.form_near_order = near_any_order
 
-    if mode_label == "Near (proximity)" and (
+    if mode_label == "Related phrases" and not related_query:
+        st.session_state.pop("active_search", None)
+        st.warning("Enter at least one phrase to search.")
+    elif mode_label == "Near (proximity)" and (
         not near_term_a.strip() or not near_term_b.strip()
     ):
         st.session_state.pop("active_search", None)

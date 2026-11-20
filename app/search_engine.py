@@ -304,8 +304,11 @@ class SearchEngine:
                 params.append(query)
                 highlight_terms.append(query)
 
-            elif sf.search_mode == "any_word":
-                terms = self._split_terms(query)
+            elif sf.search_mode in {"any_word", "related_phrases"}:
+                if sf.search_mode == "related_phrases":
+                    terms = [line.strip() for line in query.splitlines() if line.strip()]
+                else:
+                    terms = self._split_terms(query)
                 if terms:
                     subconditions = [
                         "strpos(lower(coalesce(speech_text, '')), lower(?)) > 0"
