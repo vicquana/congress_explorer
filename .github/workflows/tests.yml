@@ -1,0 +1,27 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.0
+      # No sentence-transformers/torch: the semantic-search tests use a fake model.
+      - name: Run tests
+        run: uv run --no-project --python 3.12 --with-requirements tests/requirements.txt pytest tests -q
+
+  docker-build:
+    # Keeps the Dockerfile and requirements-app.txt buildable. Builds only; nothing is pushed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Build image
+        run: docker build -t congress-explorer:ci .

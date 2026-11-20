@@ -1,0 +1,9 @@
+# What the tests need. Same floors as pyproject.toml, without sentence-transformers/pysbd (the semantic tests use a fake
+# model). Run:  uv run --no-project --python 3.12 --with-requirements tests/requirements.txt pytest tests -q
+pytest>=8
+duckdb>=1.5.5
+huggingface-hub>=1.28.0
+numpy>=2.0.0
+pandas>=2.2
+pyarrow>=25.0.1
+streamlit>=1.59.1

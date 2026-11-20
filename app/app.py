@@ -506,21 +506,23 @@ with st.form("search_form"):
             )
 
         with filter_col3:
-            clean_states = sorted(
-                {
-                    state.strip().upper()
-                    for state in options["states"]
-                    if isinstance(state, str)
-                    and len(state.strip()) == 2
-                    and state.strip().isalpha()
-                }
-            )
+            valid_codes = set((
+                "AK AL AR AZ CA CO CT DE FL GA HI IA ID IL IN KS KY LA MA MD ME "
+                "MI MN MO MS MT NC ND NE NH NJ NM NV NY OH OK OR PA RI SC SD TN "
+                "TX UT VA VT WA WI WV WY DC AS GU MP PR VI PI"
+            ).split())
+            clean_states = sorted({
+                state.strip().upper()
+                for state in options["states"]
+                if isinstance(state, str) and state.strip().upper() in valid_codes
+            })
 
             states = st.multiselect(
-                "State",
+                "State or territory",
                 options=clean_states,
                 default=[],
-                placeholder="All states",
+                placeholder="All states and territories",
+                format_func=lambda code: "Philippine Islands (historical)" if code == "PI" else code,
             )
 
             speaker_query = st.text_input(

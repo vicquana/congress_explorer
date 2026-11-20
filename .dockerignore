@@ -1,0 +1,16 @@
+.git
+.github
+.devcontainer
+.venv
+**/__pycache__
+.DS_Store
+# the corpus and every derived artifact stay out of the build context
+data
+*.parquet
+*.zip
+*.duckdb
+# code the running app does not use
+tests
+experiment
+scripts
+main.py

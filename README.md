@@ -449,9 +449,9 @@ Analytics are secondary to source discovery and are not yet implemented. Potenti
 
 ### Not yet complete or verified
 
-- Automated tests (none currently exist for `archive_reader.py`'s offset correction, `process_corpus.py`'s join logic, `search_engine.py`, or `semantic_search.py`).
-- CI (no `.github/workflows/`).
-- Containerized / cloud-hosting configuration (no Dockerfile, `fly.toml`, etc. — the app currently relies on Streamlit Community Cloud's own `pyproject.toml` auto-detection, or manual `uv run streamlit run`).
+- Automated tests exist in `tests/` for `search_engine.py`, `data_loader.py`, `archive_reader.py` (including the 4 GiB offset correction), `process_corpus.py` (the LEFT JOIN logic and atomic output), `semantic_search.py` (with a fake model) and a Streamlit smoke test. Run: `uv run --no-project --python 3.12 --with-requirements tests/requirements.txt pytest tests -q`. Not covered: a real embedding model, `build_sentence_embeddings.py`, `build_manifest.py`, `inspect_zip.py`, `main.py`, `experiment/build_search_db.py`. Two tests are `xfail(strict=True)` and record real defects: (1) in `process_corpus._build_record` a placeholder chamber ("Unknown"/"None") in the speaker map blanks the chamber instead of falling back to the descr chamber; (2) `SearchEngine` in `near` mode with a blank term matches every speech (the Streamlit form guards against it).
+- CI: `.github/workflows/tests.yml` runs the tests and builds the image. The file parses, but the workflow has never run on GitHub.
+- Container config: `Dockerfile` (image about 650 MB, no torch), `requirements-app.txt` and `DEPLOY.md`. The image was built and run locally against the local corpus and a real search worked; the Hugging Face download path inside the container and any hosting platform are untested.
 - Regex search mode exposed as a UI option.
 - The `date` column is a raw string, not a typed date/timestamp.
 - The `experiment/build_search_db.py` full-text-search prototype is not wired into the app.

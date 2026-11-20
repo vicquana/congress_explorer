@@ -1,0 +1,8 @@
+# What the deployed web app imports at run time. Deliberately small: sentence-transformers (and with it torch and
+# the CUDA wheels) is only needed to BUILD the semantic-search pilot index, and app/semantic_search.py imports it
+# lazily. pandas arrives through streamlit.
+duckdb
+huggingface-hub
+numpy
+pyarrow
+streamlit
